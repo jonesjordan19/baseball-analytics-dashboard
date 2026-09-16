@@ -72,6 +72,8 @@ st.markdown("""
 
 MANIFEST_SHEET_ID = "1Xc3lx4ybIfp9R14ROhCWOD1RpnKIhbNYU76dYQUZdow"
 
+if "top_nav_radio" not in st.session_state:
+    st.session_state["top_nav_radio"] = "🏆 Leaderboard Hub"
 if "nav_view" not in st.session_state:
     st.session_state["nav_view"] = "🏆 Leaderboard Hub"
 if "selected_player" not in st.session_state:
@@ -338,7 +340,7 @@ def render_field_spray_chart(batted_df):
     fig.update_layout(height=380, margin=dict(l=10, r=10, t=25, b=10), plot_bgcolor="rgba(245, 247, 250, 0.6)")
     return fig
 
-# Clean button card renderer for leaderboards
+# Safe button card renderer that updates both nav_view and top_nav_radio simultaneously
 def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, submetric_label, submetric_col, player_type, key_prefix):
     target_view = "🔥 Hitter Cards" if player_type == "Hitter" else "🛡️ Pitcher Cards"
     for idx, r in df_ranked.iterrows():
@@ -349,6 +351,7 @@ def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, 
         if st.button(card_label, key=f"{key_prefix}_{idx}_{p_name}", use_container_width=True):
             st.session_state["selected_player"] = p_name
             st.session_state["nav_view"] = target_view
+            st.session_state["top_nav_radio"] = target_view
             st.rerun()
 
 # ----------------- TOP HEADER -----------------
@@ -388,10 +391,12 @@ search_selection = nav_cols[3].selectbox(
 if search_selection:
     if search_selection.startswith("Hitter: "):
         st.session_state["selected_player"] = search_selection.replace("Hitter: ", "")
+        st.session_state["top_nav_radio"] = "🔥 Hitter Cards"
         st.session_state["nav_view"] = "🔥 Hitter Cards"
         st.rerun()
     elif search_selection.startswith("Pitcher: "):
         st.session_state["selected_player"] = search_selection.replace("Pitcher: ", "")
+        st.session_state["top_nav_radio"] = "🛡️ Pitcher Cards"
         st.session_state["nav_view"] = "🛡️ Pitcher Cards"
         st.rerun()
 
