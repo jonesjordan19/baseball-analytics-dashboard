@@ -72,6 +72,8 @@ st.markdown("""
 
 MANIFEST_SHEET_ID = "1Xc3lx4ybIfp9R14ROhCWOD1RpnKIhbNYU76dYQUZdow"
 
+if "top_nav_radio" not in st.session_state:
+    st.session_state["top_nav_radio"] = "🏆 Leaderboard Hub"
 if "nav_view" not in st.session_state:
     st.session_state["nav_view"] = "🏆 Leaderboard Hub"
 if "selected_player" not in st.session_state:
@@ -347,6 +349,7 @@ def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, 
         card_label = f"#{idx+1}   {p_name}   —   {m_val} {metric_label}  ({sub_val} {submetric_label})"
         if st.button(card_label, key=f"{key_prefix}_{idx}_{p_name}", use_container_width=True):
             st.session_state["selected_player"] = p_name
+            st.session_state["top_nav_radio"] = target_view
             st.session_state["nav_view"] = target_view
             st.rerun()
 
@@ -364,25 +367,49 @@ if data.empty:
 if 'ParsedDate' not in data.columns:
     data['ParsedDate'] = data['Game_Source'].apply(extract_game_date)
 
-# ----------------- TOP NAVIGATION & DATE FILTER HUB -----------------
+# ----------------- PROCESS QUICK SEARCH FIRST (PREVENTS OVERWRITE) -----------------
 nav_cols = st.columns([1.2, 0.8, 1.4, 1.4])
-view_options = ["🏆 Leaderboard Hub", "🔥 Hitter Cards", "🛡️ Pitcher Cards", "📊 Team Game Summary"]
-
-current_idx = view_options.index(st.session_state["nav_view"]) if st.session_state["nav_view"] in view_options else 0
-
-selected_nav = nav_cols[0].radio(
-    "Navigation Mode",
-    options=view_options,
-    index=current_idx,
-    horizontal=False,
-    label_visibility="collapsed"
-)
-if selected_nav != st.session_state["nav_view"]:
-    st.session_state["nav_view"] = selected_nav
 
 available_years = sorted(data['Season_Year'].dropna().unique())
 selected_year = nav_cols[1].selectbox("Season Year", options=available_years, index=0)
 season_raw = data[data['Season_Year'] == selected_year]
+
+all_batters_full = sorted([b for b in season_raw['Batter'].dropna().unique() if str(b).strip()])
+all_pitchers_full = sorted([p for p in season_raw['Pitcher'].dropna().unique() if str(p).strip()])
+player_search_list = [f"Hitter: {b}" for b in all_batters_full] + [f"Pitcher: {p}" for p in all_pitchers_full]
+
+search_selection = nav_cols[3].selectbox(
+    "Quick Search",
+    options=player_search_list,
+    index=None,
+    placeholder="🔍 Type player name...",
+    label_visibility="collapsed",
+    key="blank_player_search"
+)
+
+if search_selection:
+    if search_selection.startswith("Hitter: "):
+        st.session_state["selected_player"] = search_selection.replace("Hitter: ", "")
+        st.session_state["top_nav_radio"] = "🔥 Hitter Cards"
+        st.session_state["nav_view"] = "🔥 Hitter Cards"
+        st.rerun()
+    elif search_selection.startswith("Pitcher: "):
+        st.session_state["selected_player"] = search_selection.replace("Pitcher: ", "")
+        st.session_state["top_nav_radio"] = "🛡️ Pitcher Cards"
+        st.session_state["nav_view"] = "🛡️ Pitcher Cards"
+        st.rerun()
+
+# ----------------- TOP NAVIGATION & DATE FILTER HUB -----------------
+view_options = ["🏆 Leaderboard Hub", "🔥 Hitter Cards", "🛡️ Pitcher Cards", "📊 Team Game Summary"]
+
+selected_nav = nav_cols[0].radio(
+    "Navigation Mode",
+    options=view_options,
+    key="top_nav_radio",
+    horizontal=False,
+    label_visibility="collapsed"
+)
+st.session_state["nav_view"] = selected_nav
 
 all_dates = sorted(season_raw['ParsedDate'].dropna().unique())
 min_d = all_dates[0] if all_dates else date(2026, 6, 1)
@@ -414,26 +441,6 @@ else:
 
 all_batters = sorted([b for b in season_data['Batter'].dropna().unique() if str(b).strip()])
 all_pitchers = sorted([p for p in season_data['Pitcher'].dropna().unique() if str(p).strip()])
-player_search_list = [f"Hitter: {b}" for b in all_batters] + [f"Pitcher: {p}" for p in all_pitchers]
-
-search_selection = nav_cols[3].selectbox(
-    "Quick Search",
-    options=player_search_list,
-    index=None,
-    placeholder="🔍 Type player name...",
-    label_visibility="collapsed",
-    key="blank_player_search"
-)
-
-if search_selection:
-    if search_selection.startswith("Hitter: "):
-        st.session_state["selected_player"] = search_selection.replace("Hitter: ", "")
-        st.session_state["nav_view"] = "🔥 Hitter Cards"
-        st.rerun()
-    elif search_selection.startswith("Pitcher: "):
-        st.session_state["selected_player"] = search_selection.replace("Pitcher: ", "")
-        st.session_state["nav_view"] = "🛡️ Pitcher Cards"
-        st.rerun()
 
 # ----------------- INTERACTIVE AI SCOUT BOT -----------------
 with st.expander("🤖 AI Scout Assistant — Ask Anything About Any Player"):
@@ -614,6 +621,7 @@ if st.session_state["nav_view"] == "🏆 Leaderboard Hub":
 # =====================================================================
 elif st.session_state["nav_view"] == "🔥 Hitter Cards":
     if st.button("⬅️ Return to Leaderboard Hub"):
+        st.session_state["top_nav_radio"] = "🏆 Leaderboard Hub"
         st.session_state["nav_view"] = "🏆 Leaderboard Hub"
         st.rerun()
 
@@ -630,7 +638,6 @@ elif st.session_state["nav_view"] == "🔥 Hitter Cards":
     selected_batter = col_h_sel.selectbox("Select Batter", options=batters, index=default_batter_idx)
     st.session_state["selected_player"] = selected_batter
 
-    # FIX: Pull game list from season_raw so all games appear regardless of date filter
     player_games = ["All Games (Cumulative)"] + sorted([g for g in season_raw[season_raw['Batter'] == selected_batter]['Game_Source'].dropna().unique()])
     selected_game = col_h_gm.selectbox("Scope Filter", options=player_games, index=0)
     
@@ -752,6 +759,7 @@ elif st.session_state["nav_view"] == "🔥 Hitter Cards":
 # =====================================================================
 elif st.session_state["nav_view"] == "🛡️ Pitcher Cards":
     if st.button("⬅️ Return to Leaderboard Hub"):
+        st.session_state["top_nav_radio"] = "🏆 Leaderboard Hub"
         st.session_state["nav_view"] = "🏆 Leaderboard Hub"
         st.rerun()
 
@@ -768,7 +776,6 @@ elif st.session_state["nav_view"] == "🛡️ Pitcher Cards":
     selected_pitcher = col_p_sel.selectbox("Select Pitcher", options=pitchers, index=default_pitcher_idx)
     st.session_state["selected_player"] = selected_pitcher
 
-    # FIX: Pull game list from season_raw so all games appear regardless of date filter
     pitcher_games = ["All Games (Cumulative)"] + sorted([g for g in season_raw[season_raw['Pitcher'] == selected_pitcher]['Game_Source'].dropna().unique()])
     selected_game = col_p_gm.selectbox("Scope Filter", options=pitcher_games, index=0)
 
