@@ -78,8 +78,6 @@ if "selected_player" not in st.session_state:
     st.session_state["selected_player"] = None
 if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []
-if "date_filter_range" not in st.session_state:
-    st.session_state["date_filter_range"] = (date(2026, 6, 1), date(2026, 7, 31))
 
 def extract_game_date(game_source):
     match = re.search(r"(\d{1,2})-(\d{1,2})-(\d{4})", str(game_source))
@@ -386,26 +384,13 @@ available_years = sorted(data['Season_Year'].dropna().unique())
 selected_year = nav_cols[1].selectbox("Season Year", options=available_years, index=0)
 season_raw = data[data['Season_Year'] == selected_year]
 
-# Determine date boundaries for season
-all_dates = sorted(season_raw['ParsedDate'].dropna().unique())
-min_d = all_dates[0] if all_dates else date(2026, 6, 1)
-max_d = all_dates[-1] if all_dates else date(2026, 8, 15)
-
-# Enforce default June 1 to July 31 window managed safely via session state
-default_start = max(date(2026, 6, 1), min_d)
-default_end = min(date(2026, 7, 31), max_d)
-if default_start > default_end:
-    default_start, default_end = min_d, max_d
-
-# Check session state for date range initialization
+# Flexible Date Picker (No strict min/max constraints to prevent value-below-min errors)
 if "date_filter_range" not in st.session_state:
-    st.session_state["date_filter_range"] = (default_start, default_end)
+    st.session_state["date_filter_range"] = (date(2026, 6, 1), date(2026, 7, 31))
 
 date_range = nav_cols[2].date_input(
     "Date Range",
     value=st.session_state["date_filter_range"],
-    min_value=min_d,
-    max_value=max_d,
     label_visibility="collapsed",
     key="date_picker_widget"
 )
