@@ -18,7 +18,6 @@ st.set_page_config(
 # ----------------- MOBILE-FIRST RESPONSIVE STYLING -----------------
 st.markdown("""
 <style>
-    /* Remove sidebar and mobile drawer toggle button completely */
     [data-testid="stSidebar"] {
         display: none !important;
     }
@@ -29,7 +28,6 @@ st.markdown("""
         display: none !important;
     }
 
-    /* Clean padding */
     .block-container {
         padding-left: 1rem !important;
         padding-right: 1rem !important;
@@ -51,7 +49,6 @@ st.markdown("""
         }
     }
     
-    /* Sports Card Leaderboard Buttons */
     div.stButton > button {
         width: 100% !important;
         text-align: left !important;
@@ -74,6 +71,8 @@ st.markdown("""
 
 MANIFEST_SHEET_ID = "1Xc3lx4ybIfp9R14ROhCWOD1RpnKIhbNYU76dYQUZdow"
 
+if "top_nav_radio" not in st.session_state:
+    st.session_state["top_nav_radio"] = "🏆 Leaderboard Hub"
 if "nav_view" not in st.session_state:
     st.session_state["nav_view"] = "🏆 Leaderboard Hub"
 if "selected_player" not in st.session_state:
@@ -319,8 +318,10 @@ def render_field_spray_chart(batted_df):
     fig.update_layout(height=380, margin=dict(l=10, r=10, t=25, b=10), plot_bgcolor="rgba(245, 247, 250, 0.6)")
     return fig
 
+# Callback: Synchronize top_nav_radio and nav_view directly
 def select_player_callback(player_name, target_view):
     st.session_state["selected_player"] = player_name
+    st.session_state["top_nav_radio"] = target_view
     st.session_state["nav_view"] = target_view
 
 def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, submetric_label, submetric_col, player_type, key_prefix):
@@ -330,11 +331,9 @@ def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, 
         m_val = r[metric_col]
         sub_val = r[submetric_col]
         card_label = f"#{idx+1}   {p_name}   —   {m_val} {metric_label}  ({sub_val} {submetric_label})"
-        st.button(
-            card_label, key=f"{key_prefix}_{idx}_{p_name}",
-            on_click=select_player_callback, args=(p_name, target_view),
-            use_container_width=True
-        )
+        if st.button(card_label, key=f"{key_prefix}_{idx}_{p_name}", use_container_width=True):
+            select_player_callback(p_name, target_view)
+            st.rerun()
 
 # ----------------- TOP HEADER -----------------
 st.title("⚡ Marshalls League Data Engine")
@@ -351,15 +350,12 @@ if data.empty:
 nav_cols = st.columns([1.2, 1.2, 1.6])
 view_options = ["🏆 Leaderboard Hub", "🔥 Hitter Cards", "🛡️ Pitcher Cards", "📊 Team Game Summary"]
 
-current_view_idx = view_options.index(st.session_state["nav_view"]) if st.session_state["nav_view"] in view_options else 0
-
 selected_nav = nav_cols[0].radio(
     "Navigation Mode",
     options=view_options,
-    index=current_view_idx,
+    key="top_nav_radio",
     horizontal=False,
-    label_visibility="collapsed",
-    key="top_nav_radio"
+    label_visibility="collapsed"
 )
 st.session_state["nav_view"] = selected_nav
 
@@ -372,7 +368,6 @@ all_batters = sorted([b for b in season_data['Batter'].dropna().unique() if str(
 all_pitchers = sorted([p for p in season_data['Pitcher'].dropna().unique() if str(p).strip()])
 player_search_list = [f"Hitter: {b}" for b in all_batters] + [f"Pitcher: {p}" for p in all_pitchers]
 
-# index=None creates a clean blank input field with no text to delete
 search_selection = nav_cols[2].selectbox(
     "Quick Search",
     options=player_search_list,
@@ -385,10 +380,12 @@ search_selection = nav_cols[2].selectbox(
 if search_selection:
     if search_selection.startswith("Hitter: "):
         st.session_state["selected_player"] = search_selection.replace("Hitter: ", "")
+        st.session_state["top_nav_radio"] = "🔥 Hitter Cards"
         st.session_state["nav_view"] = "🔥 Hitter Cards"
         st.rerun()
     elif search_selection.startswith("Pitcher: "):
         st.session_state["selected_player"] = search_selection.replace("Pitcher: ", "")
+        st.session_state["top_nav_radio"] = "🛡️ Pitcher Cards"
         st.session_state["nav_view"] = "🛡️ Pitcher Cards"
         st.rerun()
 
@@ -571,6 +568,7 @@ if st.session_state["nav_view"] == "🏆 Leaderboard Hub":
 # =====================================================================
 elif st.session_state["nav_view"] == "🔥 Hitter Cards":
     if st.button("⬅️ Return to Leaderboard Hub"):
+        st.session_state["top_nav_radio"] = "🏆 Leaderboard Hub"
         st.session_state["nav_view"] = "🏆 Leaderboard Hub"
         st.rerun()
 
@@ -614,7 +612,7 @@ elif st.session_state["nav_view"] == "🔥 Hitter Cards":
     t1, t2 = st.columns(2)
     with t1:
         if max_ev >= 95:
-            st.success(f"**Barrel was loud:** 100+ exit velo recorded ({max_ev:.1f} mph). Pure collegiate power.")[cite: 2]
+            st.success(f"**Barrel was loud:** 100+ exit velo recorded ({max_ev:.1f} mph). Pure collegiate power.")
         elif avg_ev >= 88:
             st.success(f"**Consistent contact:** Solid contact quality averaging {avg_ev:.1f} mph off the bat.")
         else:
@@ -622,24 +620,24 @@ elif st.session_state["nav_view"] == "🔥 Hitter Cards":
 
     with t2:
         if len(ground_balls) > len(fly_balls) and len(in_play) > 0:
-            st.warning(f"**Pick it up:** {len(ground_balls)} of {len(in_play)} balls in play stayed on the ground. Match the pitch plane and elevate.")[cite: 2]
+            st.warning(f"**Pick it up:** {len(ground_balls)} of {len(in_play)} balls in play stayed on the ground. Match the pitch plane and elevate.")
         elif len(sweet_spot) > 0:
-            st.success(f"**Good angles:** {len(sweet_spot)} of {len(in_play)} balls in play were squared in the 8°-32° sweet-spot zone.")[cite: 2]
+            st.success(f"**Good angles:** {len(sweet_spot)} of {len(in_play)} balls in play were squared in the 8°-32° sweet-spot zone.")
         else:
             st.info("**Aggression on strikes:** Attack early count fastballs in the strike zone.")
 
     k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Hard-Hit Rate (90+)", f"{len(hard_hits)}/{len(in_play)}" if len(in_play) > 0 else "0/0")[cite: 2]
-    k2.metric("Average Exit Velo", f"{avg_ev:.1f} mph" if avg_ev > 0 else "N/A")[cite: 2]
-    k3.metric("Max Exit Velo", f"{max_ev:.1f} mph" if max_ev > 0 else "N/A")[cite: 2]
-    k4.metric("Max Distance", f"{max_dist:.0f} ft" if max_dist > 0 else "N/A")[cite: 2]
-    k5.metric("Pitches / Swings", f"{total_pitches} / {swings}")[cite: 2]
+    k1.metric("Hard-Hit Rate (90+)", f"{len(hard_hits)}/{len(in_play)}" if len(in_play) > 0 else "0/0")
+    k2.metric("Average Exit Velo", f"{avg_ev:.1f} mph" if avg_ev > 0 else "N/A")
+    k3.metric("Max Exit Velo", f"{max_ev:.1f} mph" if max_ev > 0 else "N/A")
+    k4.metric("Max Distance", f"{max_dist:.0f} ft" if max_dist > 0 else "N/A")
+    k5.metric("Pitches / Swings", f"{total_pitches} / {swings}")
 
     st.divider()
 
     col_zone, col_spray = st.columns(2)
     with col_zone:
-        st.markdown("#### **Pitches Seen (Catcher's View)**")[cite: 2]
+        st.markdown("#### **Pitches Seen (Catcher's View)**")
         if 'PlateLocSide' in b_data.columns and 'PlateLocHeight' in b_data.columns:
             st.plotly_chart(render_strike_zone_figure(b_data), use_container_width=True)
 
@@ -661,8 +659,8 @@ elif st.session_state["nav_view"] == "🔥 Hitter Cards":
         st.plotly_chart(fig_pseq, use_container_width=True)
 
     with seq_c2:
-        st.markdown("##### **Count Sequencing**")[cite: 1, 3]
-        order_cseq = ['1P', 'Ahead', 'Behind', 'Even', 'Full'][cite: 1, 3]
+        st.markdown("##### **Count Sequencing**")
+        order_cseq = ['1P', 'Ahead', 'Behind', 'Even', 'Full']
         fig_cseq = render_100pct_stacked_bar(b_data, 'CountSeqBucket', order_cseq, show_legend=False)
         st.plotly_chart(fig_cseq, use_container_width=True)
 
@@ -675,20 +673,20 @@ elif st.session_state["nav_view"] == "🔥 Hitter Cards":
 
     st.divider()
 
-    st.markdown("#### **At-Bat Summary Log**")[cite: 2]
+    st.markdown("#### **At-Bat Summary Log**")
     if not in_play.empty:
         def categorize_trajectory(row):
             la = row.get('Angle', 0)
-            if la < 8: return "Ground Ball"[cite: 2]
-            elif 8 <= la <= 32: return "Line Drive"[cite: 2]
-            elif 32 < la <= 50: return "Fly Ball"[cite: 2]
+            if la < 8: return "Ground Ball"
+            elif 8 <= la <= 32: return "Line Drive"
+            elif 32 < la <= 50: return "Fly Ball"
             return "Pop Up"
 
         def categorize_direction(row):
             d = row.get('Direction', 0)
-            if d < -15: return "Left"[cite: 2]
-            elif -15 <= d <= 15: return "Center"[cite: 2]
-            return "Right"[cite: 2]
+            if d < -15: return "Left"
+            elif -15 <= d <= 15: return "Center"
+            return "Right"
 
         in_play_display = in_play.copy()
         in_play_display['Contact'] = in_play_display.apply(categorize_trajectory, axis=1)
@@ -712,6 +710,7 @@ elif st.session_state["nav_view"] == "🔥 Hitter Cards":
 # =====================================================================
 elif st.session_state["nav_view"] == "🛡️ Pitcher Cards":
     if st.button("⬅️ Return to Leaderboard Hub"):
+        st.session_state["top_nav_radio"] = "🏆 Leaderboard Hub"
         st.session_state["nav_view"] = "🏆 Leaderboard Hub"
         st.rerun()
 
@@ -737,45 +736,45 @@ elif st.session_state["nav_view"] == "🛡️ Pitcher Cards":
 
     p_data = enrich_pitch_sequencing_data(p_data)
 
-    total_p = len(p_data)[cite: 1]
+    total_p = len(p_data)
     strikes = len(p_data[p_data['PitchCall'].astype(str).str.contains("Strike|Foul|InPlay", case=False, na=False)])
-    strike_pct = (strikes / total_p * 100) if total_p > 0 else 0[cite: 1]
+    strike_pct = (strikes / total_p * 100) if total_p > 0 else 0
     
     first_pitches = p_data[p_data['PitchofPA'] == 1]
     fp_strikes = len(first_pitches[first_pitches['PitchCall'].astype(str).str.contains("Strike|Foul|InPlay", case=False, na=False)])
-    fp_strike_pct = (fp_strikes / len(first_pitches) * 100) if len(first_pitches) > 0 else 0[cite: 1]
+    fp_strike_pct = (fp_strikes / len(first_pitches) * 100) if len(first_pitches) > 0 else 0
     
     fb_df = p_data[p_data['TaggedPitchType'] == 'Fastball']
-    avg_fb = fb_df['RelSpeed'].mean() if not fb_df.empty else 0[cite: 1]
-    max_fb = fb_df['RelSpeed'].max() if not fb_df.empty else 0[cite: 1]
+    avg_fb = fb_df['RelSpeed'].mean() if not fb_df.empty else 0
+    max_fb = fb_df['RelSpeed'].max() if not fb_df.empty else 0
 
-    st.subheader(f"Pitcher Postgame Report: **{selected_pitcher}**")[cite: 1]
+    st.subheader(f"Pitcher Postgame Report: **{selected_pitcher}**")
     st.caption(f"Scope: {selected_game} | Season: {selected_year}")
 
     col_t1, col_t2 = st.columns(2)
     with col_t1:
         if fp_strike_pct >= 65:
-            st.success(f"**Pounded the zone early:** {fp_strike_pct:.0f}% first-pitch strikes. Set the tone and dictated counts.")[cite: 1]
+            st.success(f"**Pounded the zone early:** {fp_strike_pct:.0f}% first-pitch strikes. Set the tone and dictated counts.")
         else:
-            st.warning(f"**Mix pitch one:** First-pitch strike rate was {fp_strike_pct:.0f}%. Get ahead early to open secondary pitches.")[cite: 1, 9]
+            st.warning(f"**Mix pitch one:** First-pitch strike rate was {fp_strike_pct:.0f}%. Get ahead early to open secondary pitches.")
     with col_t2:
         if strike_pct >= 62:
-            st.success(f"**In the zone all day:** {strike_pct:.0f}% total strikes. Filled up the zone.")[cite: 1, 9]
+            st.success(f"**In the zone all day:** {strike_pct:.0f}% total strikes. Filled up the zone.")
         else:
             st.info(f"**Count control:** Focus on winning 1-1 and 2-2 counts to avoid deep pitch counts.")
 
     pk1, pk2, pk3, pk4, pk5 = st.columns(5)
-    pk1.metric("Total Pitches", f"{total_p}")[cite: 1]
-    pk2.metric("Strike %", f"{strike_pct:.0f}%")[cite: 1]
-    pk3.metric("Avg FB Velo", f"{avg_fb:.1f} mph" if avg_fb > 0 else "N/A")[cite: 1]
-    pk4.metric("Max FB Velo", f"{max_fb:.1f} mph" if max_fb > 0 else "N/A")[cite: 1]
-    pk5.metric("First-Pitch Strike %", f"{fp_strike_pct:.0f}%")[cite: 1]
+    pk1.metric("Total Pitches", f"{total_p}")
+    pk2.metric("Strike %", f"{strike_pct:.0f}%")
+    pk3.metric("Avg FB Velo", f"{avg_fb:.1f} mph" if avg_fb > 0 else "N/A")
+    pk4.metric("Max FB Velo", f"{max_fb:.1f} mph" if max_fb > 0 else "N/A")
+    pk5.metric("First-Pitch Strike %", f"{fp_strike_pct:.0f}%")
 
     st.divider()
 
     p_col1, p_col2 = st.columns(2)
     with p_col1:
-        st.markdown("#### **Pitch Movement (Pitcher's View)**")[cite: 1]
+        st.markdown("#### **Pitch Movement (Pitcher's View)**")
         fig_mov = px.scatter(
             p_data, x="HorzBreak", y="InducedVertBreak",
             color="TaggedPitchType", hover_data=["RelSpeed", "SpinRate"],
@@ -790,7 +789,7 @@ elif st.session_state["nav_view"] == "🛡️ Pitcher Cards":
         st.plotly_chart(fig_mov, use_container_width=True)
 
     with p_col2:
-        st.markdown("#### **Location & Damage Allowed (Catcher's View)**")[cite: 1]
+        st.markdown("#### **Location & Damage Allowed (Catcher's View)**")
         if 'PlateLocSide' in p_data.columns and 'PlateLocHeight' in p_data.columns:
             st.plotly_chart(render_strike_zone_figure(p_data), use_container_width=True)
 
@@ -808,8 +807,8 @@ elif st.session_state["nav_view"] == "🛡️ Pitcher Cards":
         st.plotly_chart(fig_p_pseq, use_container_width=True)
 
     with p_seq_c2:
-        st.markdown("##### **Count Sequencing**")[cite: 1, 3]
-        order_cseq = ['1P', 'Ahead', 'Behind', 'Even', 'Full'][cite: 1, 3]
+        st.markdown("##### **Count Sequencing**")
+        order_cseq = ['1P', 'Ahead', 'Behind', 'Even', 'Full']
         fig_p_cseq = render_100pct_stacked_bar(p_data, 'CountSeqBucket', order_cseq, show_legend=False)
         st.plotly_chart(fig_p_cseq, use_container_width=True)
 
