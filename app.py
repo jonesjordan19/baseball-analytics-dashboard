@@ -79,13 +79,7 @@ if "selected_player" not in st.session_state:
 if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []
 
-def extract_game_date(game_source, df_row=None):
-    if df_row is not None and 'Date' in df_row and pd.notna(df_row['Date']):
-        try:
-            return pd.to_datetime(df_row['Date']).date()
-        except Exception:
-            pass
-    # Regex extract MM-DD-YYYY or M-D-YYYY from filename
+def extract_game_date(game_source):
     match = re.search(r"(\d{1,2})-(\d{1,2})-(\d{4})", str(game_source))
     if match:
         m, d, y = map(int, match.groups())
@@ -105,10 +99,7 @@ def fetch_single_csv(args):
             if not df.empty and 'TaggedPitchType' in df.columns:
                 df['Season_Year'] = int(season_year)
                 df['Game_Source'] = str(game_name)
-                
-                # Assign game date
-                g_date = extract_game_date(game_name, df.iloc[0] if not df.empty else None)
-                df['ParsedDate'] = g_date
+                df['ParsedDate'] = extract_game_date(game_name)
                 
                 if 'RelSpeed' in df.columns:
                     df = df[(df['RelSpeed'] >= 35.0) & (df['RelSpeed'] <= 106.0)]
@@ -369,6 +360,10 @@ with st.spinner("Streaming Marshalls League telemetry..."):
 if data.empty:
     st.warning("Telemetry is loading. Please check permissions on the Google Sheet.")
     st.stop()
+
+# Ensure ParsedDate is always present even if data was cached prior to date parsing
+if 'ParsedDate' not in data.columns:
+    data['ParsedDate'] = data['Game_Source'].apply(extract_game_date)
 
 # ----------------- TOP NAVIGATION & DATE FILTER HUB -----------------
 nav_cols = st.columns([1.2, 0.8, 1.4, 1.4])
@@ -1075,7 +1070,7 @@ else:
                 fig_m.update_xaxes(range=[-25, 25], gridcolor="rgba(0,0,0,0.06)")
                 fig_m.update_yaxes(range=[-25, 25], gridcolor="rgba(0,0,0,0.06)")
                 fig_m.add_hline(y=0, line_dash="dash", line_color="#888888")
-                fig_mov.add_vline(x=0, line_dash="dash", line_color="#888888")
+                fig_m.add_vline(x=0, line_dash="dash", line_color="#888888")
                 st.plotly_chart(fig_m, use_container_width=True)
             with cp_z:
                 st.plotly_chart(render_strike_zone_figure(sp_data), use_container_width=True)
