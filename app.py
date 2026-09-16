@@ -1,168 +1,214 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import requests
+import os
 import re
-from io import StringIO
+import gdown
+from pathlib import Path
 
-st.set_page_config(page_title="Pro Baseball Sabermetrics Hub", layout="wide")
+st.set_page_config(
+    page_title="Marshalls League Data Engine",
+    page_icon="⚾",
+    layout="wide"
+)
 
 FOLDER_ID = "1aJlhryPy5pPqEcbt-EvkEIiLrGwuQtnd"
+DOWNLOAD_DIR = Path("./downloaded_games")
 
-@st.cache_data(ttl=600)  # Caches data for 10 minutes, then re-checks Drive
-def fetch_and_process_game_data(folder_id):
-    """Fetches CSVs from public Google Drive folder and parses metrics."""
-    # Discover files via Google Drive web listing
+@st.cache_data(ttl=600, show_spinner=False)
+def load_data_engine(folder_id):
+    """Downloads public Drive folder games, parses Sabermetric and Kinematic metrics."""
+    DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Download public Drive folder recursively
     folder_url = f"https://drive.google.com/drive/folders/{folder_id}"
-    resp = requests.get(folder_url)
-    
-    # Extract file IDs and titles matching CSV files
-    file_pattern = re.findall(r'\["([a-zA-Z0-9_-]{28,35})",\["([^"]+\.csv)"', resp.text)
-    
-    # Fallback to direct download list if regex structure shifts
-    discovered_files = list(set(file_pattern))
-    
+    try:
+        gdown.download_folder(url=folder_url, output=str(DOWNLOAD_DIR), quiet=True, remaining_ok=True)
+    except Exception as e:
+        st.error(f"Error connecting to Drive data stream: {e}")
+
+    csv_files = list(DOWNLOAD_DIR.rglob("*.csv"))
+    if not csv_files:
+        return pd.DataFrame()
+
     frames = []
-    
-    for file_id, file_name in discovered_files:
+    for f in csv_files:
         try:
-            download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-            csv_data = requests.get(download_url).content.decode('utf-8', errors='ignore')
-            df = pd.read_csv(StringIO(csv_data), low_memory=False)
-            
+            df = pd.read_csv(f, low_memory=False)
             if df.empty:
                 continue
 
-            # Extract Year from Date column or filename
+            # Year Extraction (multi-season intelligence)
             if 'Date' in df.columns and df['Date'].dropna().size > 0:
                 df['ParsedDate'] = pd.to_datetime(df['Date'], errors='coerce')
                 df['Season_Year'] = df['ParsedDate'].dt.year.fillna(2026).astype(int)
             else:
-                year_match = re.search(r"202\d", file_name)
-                df['Season_Year'] = int(year_match.group(0)) if year_match else 2026
+                match = re.search(r"202\d", f.name)
+                df['Season_Year'] = int(match.group(0)) if match else 2026
 
-            df['Game_File'] = file_name
+            df['Game_Source'] = f.stem
             
-            # Filter radar/camera noise
+            # Clean non-pitch sensor artifacts
             if 'RelSpeed' in df.columns:
-                df = df[(df['RelSpeed'] >= 35.0) & (df['RelSpeed'] <= 106.0)]
+                df = df[(df['RelSpeed'] >= 35.0) & (df['RelSpeed'] <= 105.0)]
             if 'isOutlier' in df.columns:
                 df = df[df['isOutlier'] != True]
-                
+
+            # Sabermetric derived features
+            if 'InducedVertBreak' in df.columns and 'VertApprAngle' in df.columns:
+                # Ride Efficiency Index (IVB relative to Velocity)
+                df['Ride_Per_MPH'] = (df['InducedVertBreak'] / df['RelSpeed']).round(2)
+
             frames.append(df)
         except Exception:
             continue
-            
+
     if frames:
         return pd.concat(frames, ignore_index=True)
     return pd.DataFrame()
 
-# ----------------- UI & DASHBOARD -----------------
-st.title("⚾ Pro Sabermetrics & Development Dashboard")
-st.caption("Live Feed from WIN Reality Smart Parks & TrackMan Tracking System")
+# ----------------- PRO BRANDING & HEADER -----------------
+st.title("⚡ Marshalls League Data Engine")
+st.markdown("##### **Created by Jordan Jones** | *Next-Gen Ball Flight Kinematics & Player Development System*")
 
-with st.spinner("Checking Google Drive folder for season files..."):
-    data = fetch_and_process_game_data(FOLDER_ID)
+with st.spinner("Synchronizing game telemetry with Marshalls Cloud Lake..."):
+    data = load_data_engine(FOLDER_ID)
 
 if data.empty:
-    st.error("No valid game CSV data could be loaded. Make sure the Google Drive folder link sharing is set to 'Anyone with the link can view'.")
+    st.error("No telemetry data could be retrieved. Verify that the Google Drive folder link sharing is set to 'Anyone with the link can view'.")
     st.stop()
 
-# Sidebar Controls
-st.sidebar.header("🎯 Filter Controls")
+# ----------------- SIDEBAR CONTROLS -----------------
+st.sidebar.image("https://img.icons8.com/color/96/baseball--v1.png", width=64)
+st.sidebar.title("Data Control Room")
 
-# Year Selector
-all_years = sorted(data['Season_Year'].dropna().unique())
-selected_years = st.sidebar.multiselect("Season Year", options=all_years, default=all_years)
-
-# Filter by Year first
+# Multi-Season Filter
+available_years = sorted(data['Season_Year'].dropna().unique())
+selected_years = st.sidebar.multiselect("Season Filter", options=available_years, default=available_years)
 df_filtered = data[data['Season_Year'].isin(selected_years)]
 
-# Pitcher & Pitch Type Selectors
+# Pitcher Selection
 pitchers = sorted([p for p in df_filtered['Pitcher'].dropna().unique() if str(p).strip()])
-if pitchers:
-    selected_pitcher = st.sidebar.selectbox("Select Pitcher", options=["All Pitchers"] + pitchers)
-    if selected_pitcher != "All Pitchers":
-        df_filtered = df_filtered[df_filtered['Pitcher'] == selected_pitcher]
+selected_pitcher = st.sidebar.selectbox("Pitcher Profile", options=["All Arms"] + pitchers)
+if selected_pitcher != "All Arms":
+    df_filtered = df_filtered[df_filtered['Pitcher'] == selected_pitcher]
 
+# Arsenal Selection
 pitch_types = sorted([pt for pt in df_filtered['TaggedPitchType'].dropna().unique() if str(pt).strip()])
-selected_pitches = st.sidebar.multiselect("Pitch Types", options=pitch_types, default=pitch_types)
+selected_pitches = st.sidebar.multiselect("Pitch Arsenal", options=pitch_types, default=pitch_types)
 df_filtered = df_filtered[df_filtered['TaggedPitchType'].isin(selected_pitches)]
 
-# Key Top-Level KPI Cards
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Total Pitches Tracked", f"{len(df_filtered):,}")
-fb_df = df_filtered[df_filtered['TaggedPitchType'] == 'Fastball']
-c2.metric("Avg Fastball Velo", f"{fb_df['RelSpeed'].mean():.1f} mph" if not fb_df.empty else "N/A")
-c3.metric("Avg Fastball Spin", f"{fb_df['SpinRate'].mean():.0f} rpm" if not fb_df.empty else "N/A")
-c4.metric("Seasons Represented", ", ".join(map(str, selected_years)))
+# ----------------- EXECUTIVE KPI CARDS -----------------
+kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+kpi1.metric("Tracked Pitches", f"{len(df_filtered):,}")
+
+fb_data = df_filtered[df_filtered['TaggedPitchType'] == 'Fastball']
+avg_velo = fb_data['RelSpeed'].mean() if not fb_data.empty else df_filtered['RelSpeed'].mean()
+kpi2.metric("Peak FB Velo", f"{fb_data['RelSpeed'].max():.1f} mph" if not fb_data.empty else "N/A")
+kpi3.metric("Avg FB Velo", f"{avg_velo:.1f} mph" if pd.notna(avg_velo) else "N/A")
+
+avg_spin = fb_data['SpinRate'].mean() if not fb_data.empty else df_filtered['SpinRate'].mean()
+kpi4.metric("Avg Spin Rate", f"{avg_spin:.0f} RPM" if pd.notna(avg_spin) else "N/A")
+
+avg_ext = df_filtered['Extension'].mean() if 'Extension' in df_filtered.columns else None
+kpi5.metric("Avg Extension", f"{avg_ext:.1f} ft" if pd.notna(avg_ext) else "N/A")
 
 st.divider()
 
-# Tab Navigation
-tab1, tab2, tab3 = st.tabs(["Pitch Shapes (IVB vs HB)", "Strike Zone & Locations", "Biomechanical Chain"])
+# ----------------- ANALYTICAL MODULES -----------------
+tab_flight, tab_zone, tab_kinematic, tab_yoy = st.tabs([
+    "🎯 Ball Flight & Pitch Shapes",
+    "📐 Plate Distribution & Zone Matrix",
+    "⚡ Kinetic Chain & Energy Transfer",
+    "📈 Multi-Season Development"
+])
 
-with tab1:
-    st.subheader("Pitch Arsenal Movement (TrackMan Flight Profile)")
-    col_left, col_right = st.columns([2, 1])
+# MODULE 1: FLIGHT & SHAPES
+with tab_flight:
+    c_plot, c_table = st.columns([2, 1])
     
-    with col_left:
-        fig_mov = px.scatter(
+    with c_plot:
+        fig_shape = px.scatter(
             df_filtered,
             x="HorzBreak",
             y="InducedVertBreak",
             color="TaggedPitchType",
-            symbol="Season_Year" if len(selected_years) > 1 else None,
-            hover_data=["RelSpeed", "SpinRate", "Season_Year"],
-            title="Induced Vertical Break (IVB) vs. Horizontal Break (HB)",
-            labels={"HorzBreak": "Horizontal Break (in)", "InducedVertBreak": "Induced Vertical Break (in)"}
+            hover_data=["RelSpeed", "SpinRate", "VertApprAngle"],
+            title="Pitch Movement Profile: Induced Vertical Break vs. Horizontal Break",
+            labels={"HorzBreak": "Horizontal Break (Inches)", "InducedVertBreak": "Induced Vertical Break (Inches)"},
+            template="plotly_dark"
         )
-        fig_mov.add_hline(y=0, line_dash="dash", line_color="gray")
-        fig_mov.add_vline(x=0, line_dash="dash", line_color="gray")
-        st.plotly_chart(fig_mov, use_container_width=True)
+        fig_shape.add_hline(y=0, line_dash="dash", line_color="#888888")
+        fig_shape.add_vline(x=0, line_dash="dash", line_color="#888888")
+        st.plotly_chart(fig_shape, use_container_width=True)
         
-    with col_right:
-        st.write("**Arsenal Summary Table**")
-        summary_cols = ['RelSpeed', 'SpinRate', 'InducedVertBreak', 'HorzBreak', 'Extension']
-        existing_cols = [c for c in summary_cols if c in df_filtered.columns]
-        table_summary = df_filtered.groupby(['Season_Year', 'TaggedPitchType'])[existing_cols].mean().reset_index()
-        st.dataframe(table_summary.round(1), use_container_width=True)
+    with c_table:
+        st.markdown("#### **Arsenal Metrics Breakdown**")
+        metric_cols = ['RelSpeed', 'SpinRate', 'InducedVertBreak', 'HorzBreak', 'Extension']
+        valid_cols = [col for col in metric_cols if col in df_filtered.columns]
+        summary_grid = df_filtered.groupby('TaggedPitchType')[valid_cols].mean().reset_index()
+        st.dataframe(summary_grid.round(1), use_container_width=True, hide_index=True)
 
-with tab2:
-    st.subheader("Plate Location Matrix")
+# MODULE 2: ZONE MATRIX
+with tab_zone:
     if 'PlateLocSide' in df_filtered.columns and 'PlateLocHeight' in df_filtered.columns:
         fig_zone = px.scatter(
             df_filtered,
             x="PlateLocSide",
             y="PlateLocHeight",
             color="TaggedPitchType",
-            hover_data=["RelSpeed", "PitchCall"],
-            title="Pitch Locations at Home Plate (Catcher's Perspective)"
+            hover_data=["RelSpeed", "VertApprAngle"],
+            title="Strike Zone Heat & Location Matrix (Catcher View)",
+            labels={"PlateLocSide": "Horizontal Location (ft)", "PlateLocHeight": "Vertical Location (ft)"},
+            template="plotly_dark"
         )
-        # Standard strike zone outline: x: -0.83 to 0.83 ft, y: 1.5 to 3.5 ft
+        # MLB Standard Zone Outline: Width [-0.83, 0.83], Height [1.5, 3.5]
         fig_zone.add_shape(type="rect", x0=-0.83, y0=1.5, x1=0.83, y1=3.5,
-                           line=dict(color="White", width=3))
+                           line=dict(color="#00FFCC", width=3))
         fig_zone.update_xaxes(range=[-2.5, 2.5])
         fig_zone.update_yaxes(range=[0, 5])
         st.plotly_chart(fig_zone, use_container_width=True)
     else:
-        st.info("Plate location metrics are not populated.")
+        st.info("Plate location coordinates are unavailable in the selected slice.")
 
-with tab3:
-    st.subheader("WIN Reality Kinetic Chain & Rotational Sequencing")
-    bio_cols = ['PelvisMaxAngularVelocity', 'ShoulderMaxAngularVelocity', 'ArmMaxAngularVelocity']
-    
-    if set(bio_cols).issubset(df_filtered.columns) and df_filtered['PelvisMaxAngularVelocity'].notna().any():
-        fig_bio = px.scatter(
-            df_filtered,
-            x="PelvisMaxAngularVelocity",
-            y="ShoulderMaxAngularVelocity",
-            color="TaggedPitchType",
-            size="RelSpeed",
-            hover_data=["Season_Year"],
-            title="Rotational Energy Transfer: Pelvis vs. Shoulder Peak Speed (deg/s)",
-            labels={"PelvisMaxAngularVelocity": "Pelvis Max Angular Vel (deg/s)", "ShoulderMaxAngularVelocity": "Torso Max Angular Vel (deg/s)"}
-        )
-        st.plotly_chart(fig_bio, use_container_width=True)
+# MODULE 3: KINETICS
+with tab_kinematic:
+    st.markdown("#### **Biomechanical Rotational Acceleration Engine**")
+    if 'PelvisMaxAngularVelocity' in df_filtered.columns and 'ShoulderMaxAngularVelocity' in df_filtered.columns:
+        valid_bio = df_filtered[df_filtered['PelvisMaxAngularVelocity'].notna()]
+        if not valid_bio.empty:
+            fig_kin = px.scatter(
+                valid_bio,
+                x="PelvisMaxAngularVelocity",
+                y="ShoulderMaxAngularVelocity",
+                color="TaggedPitchType",
+                size="RelSpeed",
+                hover_data=["RelSpeed"],
+                title="Torso vs. Pelvis Peak Angular Velocity (Rotational Transfer Efficiency)",
+                labels={
+                    "PelvisMaxAngularVelocity": "Pelvic Peak Angular Velocity (deg/s)",
+                    "ShoulderMaxAngularVelocity": "Upper Torso Peak Angular Velocity (deg/s)"
+                },
+                template="plotly_dark"
+            )
+            st.plotly_chart(fig_kin, use_container_width=True)
+        else:
+            st.info("No biomechanical sensor events recorded for this selection.")
     else:
-        st.info("Biomechanical angular velocity metrics are not available for the selected pitches.")
+        st.info("Kinetic metrics not found in this dataset.")
+
+# MODULE 4: MULTI-SEASON DEVELOPMENT
+with tab_yoy:
+    st.markdown("#### **Multi-Year Progression (2026 vs. Future Campaigns)**")
+    if len(available_years) > 1:
+        fig_yoy = px.box(
+            df_filtered,
+            x="TaggedPitchType",
+            y="RelSpeed",
+            color="Season_Year",
+            title="Velocity Migration Across Seasons",
+            template="plotly_dark"
+        )
+        st.plotly_chart(fig_yoy, use_container_width=True)
+    else:
+        st.success("Currently displaying 2026 Inaugural Season data. When 2027 files are placed into the Drive folder next June, side-by-side progression charts will automatically populate here.")
