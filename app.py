@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import os
+import requests
+import io
 import re
-import gdown
-from pathlib import Path
 
 st.set_page_config(
     page_title="Marshalls League Data Engine",
@@ -12,54 +11,64 @@ st.set_page_config(
     layout="wide"
 )
 
-FOLDER_ID = "1aJlhryPy5pPqEcbt-EvkEIiLrGwuQtnd"
-DOWNLOAD_DIR = Path("./downloaded_games")
+# Registry of files in the Google Drive folder
+GAME_FILES = [
+    {"id": "1oychbUr3bienpfyRq-oa7jerfCfAkI0P", "name": "7-28-2026_04-08PM_Anchors 2026 x Red Hots 2026.csv"},
+    {"id": "1QPFkec3o2HKK_64F-2cRwzucpOZByfpT", "name": "7-27-2026_08-05PM_Royals 2026 x Red Hots 2026.csv"},
+    {"id": "1tGLmuS3b7nFsrLnGDpCwZK5mMlL2hloo", "name": "7-27-2026_03-43PM_Red Hots 2026 x Blue Crew 2026.csv"},
+    {"id": "1RmNZW7fKj87TrBZ1dP6bxn6UNOmz86tr", "name": "7-26-2026_07-24PM_Anchors 2026 x Royals 2026.csv"},
+    {"id": "1BYQuWzCFz9TeGccFg7mAdm5F_fZ6qT4V", "name": "7-26-2026_03-42PM_Red Hots 2026 x Blue Crew 2026.csv"},
+    {"id": "1_vfdohpD83P-aENXity-RYD7f6Vf7qDV", "name": "7-25-2026_06-35PM_Anchors 2026 x Red Hots 2026.csv"},
+    {"id": "1DWAQUJyuelU_RlQTkFS2bYCpx16vYHBl", "name": "7-25-2026_03-48PM_Royals 2026 x Blue Crew 2026.csv"},
+    {"id": "1ZEmd4aSsfm-mX9lVrPaSoqBHXqAEsjxF", "name": "7-24-2026_03-51PM_Royals 2026 x Red Hots 2026.csv"},
+    {"id": "1Pxj3BfAyDZFKNCrgW7PFKtewzz8akyeo", "name": "7-24-2026_08-27PM_Anchors 2026 x Blue Crew 2026.csv"},
+    {"id": "1C-RWWz4B8qwCvfjaX4_fnnIX2ZlvFzu_", "name": "7-22-2026_07-13PM_Royals 2026 x Blue Crew 2026.csv"},
+    {"id": "1N-PJsSojyacKQpa3wOzvgFiOk7CDyrlW", "name": "7-22-2026_03-36PM_Red Hots 2026 x Anchors 2026.csv"},
+    {"id": "1wTQanptOBiRPPQw7P5tabw--w0XexQ3S", "name": "7-21-2026_03-40PM_Royals 2026 x Red Hots 2026.csv"},
+    {"id": "1ynBLWRxsL9zVMTWjGDL0_7XLeHxnf1lt", "name": "7-21-2026_07-17PM_Blue Crew 2026 x Anchors 2026.csv"},
+    {"id": "12KwXvDNLYocKH7zN5K5BETqI6uN42sfX", "name": "7-20-2026_07-06PM_Red Hots 2026 x Blue Crew 2026.csv"},
+    {"id": "1XXaQj7yHImg3xwJ6WmH8tsAGbF8dXU5q", "name": "7-20-2026_03-54PM_Anchors 2026 x Royals 2026.csv"},
+    {"id": "15iMsmm-i7PhNXWCmF-HMxZt9QCl7wMmV", "name": "7-18-2026_06-40PM_Red Hots 2026 x Puerto Rico.csv"},
+    {"id": "16Y99weUeiqwM2qUYY36YwxxK2VnTh8k5", "name": "7-18-2026_03-35PM_Blue Crew 2026 x Red Hots 2026.csv"},
+    {"id": "1FeHyA34Uhy2cQ1P0SGPp4TRgdH_lQGjB", "name": "7-17-2026_07-32PM_Utah Yaks x Mexico.csv"},
+    {"id": "1gJVNviZP3Nk3SRAHuisbnSt4Nu463u7R", "name": "7-17-2026_04-12PM_Anchors 2026 x Red Hots 2026.csv"},
+    {"id": "1ts3wzyBkUmWHxdtEUd21UOBvymPSO-Yb", "name": "7-16-2026_11-58AM_Puerto Rico x Royals 2026.csv"},
+    {"id": "1JZL_ZBkJjmxi2oV0r5joar_dSnrtnNLe", "name": "7-17-2026_12-38PM_Royals 2026 x Blue Crew 2026.csv"},
+    {"id": "1jqh_SFCV28hMz99k18MqhGEaKZluwZ2u", "name": "7-16-2026_05-03PM_Mexico x Anchors 2026.csv"},
+    {"id": "1auv4HMpFtFKPchw3JOF7yenNE4NyubHC", "name": "7-16-2026_08-39AM_Utah Yaks x Red Hots 2026.csv"},
+    {"id": "1qoger5mG_U9rMWytwElfPa2ke3ij0ZJI", "name": "7-16-2026_02-50PM_Blue Crew 2026 x Aruba.csv"},
+    {"id": "1V-W408aXAK1LaYHZeHcRTKUpgrbGoxkA", "name": "7-14-2026_12-48PM_Red Hots 2026 x Mexico.csv"}
+]
 
-@st.cache_data(ttl=600, show_spinner=False)
-def load_data_engine(folder_id):
-    """Downloads public Drive folder games, parses Sabermetric and Kinematic metrics."""
-    DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    
-    # Download public Drive folder recursively
-    folder_url = f"https://drive.google.com/drive/folders/{folder_id}"
-    try:
-        gdown.download_folder(url=folder_url, output=str(DOWNLOAD_DIR), quiet=True, remaining_ok=True)
-    except Exception as e:
-        st.error(f"Error connecting to Drive data stream: {e}")
-
-    csv_files = list(DOWNLOAD_DIR.rglob("*.csv"))
-    if not csv_files:
-        return pd.DataFrame()
-
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_all_game_telemetry():
     frames = []
-    for f in csv_files:
+    for item in GAME_FILES:
+        url = f"https://drive.google.com/uc?export=download&id={item['id']}"
         try:
-            df = pd.read_csv(f, low_memory=False)
-            if df.empty:
-                continue
+            res = requests.get(url)
+            if res.status_code == 200:
+                df = pd.read_csv(io.StringIO(res.content.decode('utf-8', errors='ignore')), low_memory=False)
+                if df.empty:
+                    continue
 
-            # Year Extraction (multi-season intelligence)
-            if 'Date' in df.columns and df['Date'].dropna().size > 0:
-                df['ParsedDate'] = pd.to_datetime(df['Date'], errors='coerce')
-                df['Season_Year'] = df['ParsedDate'].dt.year.fillna(2026).astype(int)
-            else:
-                match = re.search(r"202\d", f.name)
-                df['Season_Year'] = int(match.group(0)) if match else 2026
+                # Multi-season year determination
+                if 'Date' in df.columns and df['Date'].dropna().size > 0:
+                    df['ParsedDate'] = pd.to_datetime(df['Date'], errors='coerce')
+                    df['Season_Year'] = df['ParsedDate'].dt.year.fillna(2026).astype(int)
+                else:
+                    match = re.search(r"202\d", item['name'])
+                    df['Season_Year'] = int(match.group(0)) if match else 2026
 
-            df['Game_Source'] = f.stem
-            
-            # Clean non-pitch sensor artifacts
-            if 'RelSpeed' in df.columns:
-                df = df[(df['RelSpeed'] >= 35.0) & (df['RelSpeed'] <= 105.0)]
-            if 'isOutlier' in df.columns:
-                df = df[df['isOutlier'] != True]
+                df['Game_Source'] = item['name']
 
-            # Sabermetric derived features
-            if 'InducedVertBreak' in df.columns and 'VertApprAngle' in df.columns:
-                # Ride Efficiency Index (IVB relative to Velocity)
-                df['Ride_Per_MPH'] = (df['InducedVertBreak'] / df['RelSpeed']).round(2)
+                # Filter tracking noise
+                if 'RelSpeed' in df.columns:
+                    df = df[(df['RelSpeed'] >= 35.0) & (df['RelSpeed'] <= 106.0)]
+                if 'isOutlier' in df.columns:
+                    df = df[df['isOutlier'] != True]
 
-            frames.append(df)
+                frames.append(df)
         except Exception:
             continue
 
@@ -71,29 +80,22 @@ def load_data_engine(folder_id):
 st.title("⚡ Marshalls League Data Engine")
 st.markdown("##### **Created by Jordan Jones** | *Next-Gen Ball Flight Kinematics & Player Development System*")
 
-with st.spinner("Synchronizing game telemetry with Marshalls Cloud Lake..."):
-    data = load_data_engine(FOLDER_ID)
+with st.spinner("Streaming TrackMan & WIN Reality telemetry..."):
+    data = load_all_game_telemetry()
 
 if data.empty:
-    st.error("No telemetry data could be retrieved. Verify that the Google Drive folder link sharing is set to 'Anyone with the link can view'.")
+    st.error("No telemetry data could be loaded. Please ensure internet access is reachable.")
     st.stop()
 
 # ----------------- SIDEBAR CONTROLS -----------------
-st.sidebar.image("https://img.icons8.com/color/96/baseball--v1.png", width=64)
-st.sidebar.title("Data Control Room")
+st.sidebar.header("🎯 Data Control Room")
 
 # Multi-Season Filter
 available_years = sorted(data['Season_Year'].dropna().unique())
 selected_years = st.sidebar.multiselect("Season Filter", options=available_years, default=available_years)
 df_filtered = data[data['Season_Year'].isin(selected_years)]
 
-# Pitcher Selection
-pitchers = sorted([p for p in df_filtered['Pitcher'].dropna().unique() if str(p).strip()])
-selected_pitcher = st.sidebar.selectbox("Pitcher Profile", options=["All Arms"] + pitchers)
-if selected_pitcher != "All Arms":
-    df_filtered = df_filtered[df_filtered['Pitcher'] == selected_pitcher]
-
-# Arsenal Selection
+# Pitch Types
 pitch_types = sorted([pt for pt in df_filtered['TaggedPitchType'].dropna().unique() if str(pt).strip()])
 selected_pitches = st.sidebar.multiselect("Pitch Arsenal", options=pitch_types, default=pitch_types)
 df_filtered = df_filtered[df_filtered['TaggedPitchType'].isin(selected_pitches)]
@@ -116,11 +118,10 @@ kpi5.metric("Avg Extension", f"{avg_ext:.1f} ft" if pd.notna(avg_ext) else "N/A"
 st.divider()
 
 # ----------------- ANALYTICAL MODULES -----------------
-tab_flight, tab_zone, tab_kinematic, tab_yoy = st.tabs([
+tab_flight, tab_zone, tab_kinematic = st.tabs([
     "🎯 Ball Flight & Pitch Shapes",
     "📐 Plate Distribution & Zone Matrix",
-    "⚡ Kinetic Chain & Energy Transfer",
-    "📈 Multi-Season Development"
+    "⚡ Kinetic Chain & Energy Transfer"
 ])
 
 # MODULE 1: FLIGHT & SHAPES
@@ -158,18 +159,15 @@ with tab_zone:
             y="PlateLocHeight",
             color="TaggedPitchType",
             hover_data=["RelSpeed", "VertApprAngle"],
-            title="Strike Zone Heat & Location Matrix (Catcher View)",
+            title="Strike Zone Heat & Location Matrix (Catcher Perspective)",
             labels={"PlateLocSide": "Horizontal Location (ft)", "PlateLocHeight": "Vertical Location (ft)"},
             template="plotly_dark"
         )
-        # MLB Standard Zone Outline: Width [-0.83, 0.83], Height [1.5, 3.5]
         fig_zone.add_shape(type="rect", x0=-0.83, y0=1.5, x1=0.83, y1=3.5,
                            line=dict(color="#00FFCC", width=3))
         fig_zone.update_xaxes(range=[-2.5, 2.5])
         fig_zone.update_yaxes(range=[0, 5])
         st.plotly_chart(fig_zone, use_container_width=True)
-    else:
-        st.info("Plate location coordinates are unavailable in the selected slice.")
 
 # MODULE 3: KINETICS
 with tab_kinematic:
@@ -186,29 +184,9 @@ with tab_kinematic:
                 hover_data=["RelSpeed"],
                 title="Torso vs. Pelvis Peak Angular Velocity (Rotational Transfer Efficiency)",
                 labels={
-                    "PelvisMaxAngularVelocity": "Pelvic Peak Angular Velocity (deg/s)",
-                    "ShoulderMaxAngularVelocity": "Upper Torso Peak Angular Velocity (deg/s)"
+                    "PelvisMaxAngularVelocity": "Pelvis Max Angular Vel (deg/s)",
+                    "ShoulderMaxAngularVelocity": "Torso Max Angular Vel (deg/s)"
                 },
                 template="plotly_dark"
             )
             st.plotly_chart(fig_kin, use_container_width=True)
-        else:
-            st.info("No biomechanical sensor events recorded for this selection.")
-    else:
-        st.info("Kinetic metrics not found in this dataset.")
-
-# MODULE 4: MULTI-SEASON DEVELOPMENT
-with tab_yoy:
-    st.markdown("#### **Multi-Year Progression (2026 vs. Future Campaigns)**")
-    if len(available_years) > 1:
-        fig_yoy = px.box(
-            df_filtered,
-            x="TaggedPitchType",
-            y="RelSpeed",
-            color="Season_Year",
-            title="Velocity Migration Across Seasons",
-            template="plotly_dark"
-        )
-        st.plotly_chart(fig_yoy, use_container_width=True)
-    else:
-        st.success("Currently displaying 2026 Inaugural Season data. When 2027 files are placed into the Drive folder next June, side-by-side progression charts will automatically populate here.")
