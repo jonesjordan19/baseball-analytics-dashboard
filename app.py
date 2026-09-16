@@ -15,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ----------------- ELIMINATE SIDEBAR & OPTIMIZE TOP CONTROLS -----------------
+# ----------------- MOBILE-FIRST RESPONSIVE STYLING -----------------
 st.markdown("""
 <style>
     /* Remove sidebar and mobile drawer toggle button completely */
@@ -29,7 +29,7 @@ st.markdown("""
         display: none !important;
     }
 
-    /* Streamline mobile container padding */
+    /* Clean padding */
     .block-container {
         padding-left: 1rem !important;
         padding-right: 1rem !important;
@@ -78,6 +78,8 @@ if "nav_view" not in st.session_state:
     st.session_state["nav_view"] = "🏆 Leaderboard Hub"
 if "selected_player" not in st.session_state:
     st.session_state["selected_player"] = None
+if "chat_history" not in st.session_state:
+    st.session_state["chat_history"] = []
 
 def fetch_single_csv(args):
     file_id, game_name, season_year = args
@@ -264,7 +266,7 @@ def render_strike_zone_figure(df_pitches):
         ))
 
     fig.update_xaxes(range=[-2.2, 2.2], title="Horizontal Plate (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
-    fig.update_yaxes(range=[0.0, 4.5], title="Height from Ground (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
+    fig.update_yaxes(range=[0.0, 4.5], title="Plate Height (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
     fig.update_layout(height=380, margin=dict(l=10, r=10, t=25, b=10),
                       legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                       plot_bgcolor="rgba(245, 247, 250, 0.6)")
@@ -345,7 +347,7 @@ if data.empty:
     st.warning("Telemetry is loading. Please check permissions on the Google Sheet.")
     st.stop()
 
-# ----------------- TOP NAVIGATION & SEARCH HUB (REPLACES SIDEBAR) -----------------
+# ----------------- TOP NAVIGATION & SEARCH HUB -----------------
 nav_cols = st.columns([1.2, 1.2, 1.2, 1.4])
 view_options = ["🏆 Leaderboard Hub", "🔥 Hitter Cards", "🛡️ Pitcher Cards", "📊 Team Game Summary"]
 
@@ -361,7 +363,6 @@ selected_nav = nav_cols[0].radio(
 )
 st.session_state["nav_view"] = selected_nav
 
-# Season & Universal Search Controls
 available_years = sorted(data['Season_Year'].dropna().unique())
 selected_year = nav_cols[1].selectbox("Season Year", options=available_years, index=0)
 season_data = data[data['Season_Year'] == selected_year]
@@ -381,17 +382,96 @@ if search_selection != "🔍 Search & Jump to Any Player...":
         st.session_state["nav_view"] = "🛡️ Pitcher Cards"
         st.rerun()
 
-st.divider()
+# ----------------- INTERACTIVE AI SCOUT BOT -----------------
+with st.expander("🤖 AI Scout Assistant — Ask Anything About Any Player"):
+    st.caption("Ask questions like: *'How hard does Ashton Roache hit?'*, *'What does Zaylun Fenn throw when behind?'*, or *'Who has the highest fastball velo?'*")
+    
+    # Display recent chat history
+    for msg in st.session_state["chat_history"][-4:]:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            
+    user_prompt = st.chat_input("Ask about a player's velocity, tendencies, pitch mix, or rankings...")
+    
+    if user_prompt:
+        st.session_state["chat_history"].append({"role": "user", "content": user_prompt})
+        with st.chat_message("user"):
+            st.markdown(user_prompt)
+            
+        with st.chat_message("assistant"):
+            q = user_prompt.lower()
+            response_text = ""
+            
+            # Check for API key if user added it in Streamlit secrets
+            gemini_key = st.secrets.get("GEMINI_API_KEY", None)
+            
+            if gemini_key:
+                try:
+                    from google import genai
+                    client = genai.Client(api_key=gemini_key)
+                    # Sample league context
+                    top_ev = season_data.groupby('Batter')['ExitSpeed'].max().nlargest(5).to_dict()
+                    top_velo = season_data.groupby('Pitcher')['RelSpeed'].max().nlargest(5).to_dict()
+                    system_ctx = f"You are the Marshalls College Baseball League expert scouting AI. Answer concisely (2-4 sentences max). League Context: Top Exit Velo: {top_ev}. Top Pitch Velo: {top_velo}."
+                    res = client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=f"{system_ctx}\n\nQuestion: {user_prompt}"
+                    )
+                    response_text = res.text
+                except Exception:
+                    response_text = None
 
-def display_shared_sequencing_legend():
-    st.markdown("""
-        <div style='display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 8px;'>
-            <span style='display: flex; align-items: center;'><span style='height: 10px; width: 10px; background-color: #EF4444; border-radius: 50%; display: inline-block; margin-right: 5px;'></span><small><b>Fastballs</b></small></span>
-            <span style='display: flex; align-items: center;'><span style='height: 10px; width: 10px; background-color: #06B6D4; border-radius: 50%; display: inline-block; margin-right: 5px;'></span><small><b>Breaking</b></small></span>
-            <span style='display: flex; align-items: center;'><span style='height: 10px; width: 10px; background-color: #10B981; border-radius: 50%; display: inline-block; margin-right: 5px;'></span><small><b>Offspeed</b></small></span>
-            <span style='display: flex; align-items: center;'><span style='height: 10px; width: 10px; background-color: #6B7280; border-radius: 50%; display: inline-block; margin-right: 5px;'></span><small><b>UD</b></small></span>
-        </div>
-    """, unsafe_allow_html=True)
+            # Fallback to Built-in Deterministic Scouting Analytics Engine
+            if not response_text:
+                # 1. Match Batter query
+                matched_batter = next((b for b in all_batters if any(part.lower() in q for part in b.replace(",", "").split())), None)
+                matched_pitcher = next((p for p in all_pitchers if any(part.lower() in q for part in p.replace(",", "").split())), None)
+                
+                if matched_batter:
+                    b_sub = season_data[season_data['Batter'] == matched_batter]
+                    bip = b_sub[b_sub['ExitSpeed'].notna() & (b_sub['ExitSpeed'] >= 40)]
+                    max_ev = bip['ExitSpeed'].max() if not bip.empty else 0
+                    avg_ev = bip['ExitSpeed'].mean() if not bip.empty else 0
+                    hh_cnt = len(bip[bip['ExitSpeed'] >= 90.0])
+                    tot = len(bip)
+                    hh_pct = (hh_cnt / tot * 100) if tot > 0 else 0
+                    response_text = (
+                        f"📊 **Scouting Report for {matched_batter} (Hitter):**\n\n"
+                        f"* **Peak Power:** Max Exit Velo of **{max_ev:.1f} mph** with an average EV of **{avg_ev:.1f} mph**.\n"
+                        f"* **Hard-Hit Rate (90+ mph):** **{hh_pct:.1f}%** ({hh_cnt} hard-hit balls in {tot} balls in play).\n"
+                        f"* **Plate Appearances Tracked:** {len(b_sub)} pitches faced across the season."
+                    )
+                elif matched_pitcher:
+                    p_sub = season_data[season_data['Pitcher'] == matched_pitcher]
+                    fb = p_sub[p_sub['TaggedPitchType'] == 'Fastball']
+                    max_v = fb['RelSpeed'].max() if not fb.empty else p_sub['RelSpeed'].max()
+                    avg_v = fb['RelSpeed'].mean() if not fb.empty else p_sub['RelSpeed'].mean()
+                    tot_p = len(p_sub)
+                    strikes = len(p_sub[p_sub['PitchCall'].astype(str).str.contains("Strike|Foul|InPlay", case=False, na=False)])
+                    k_pct = (strikes / tot_p * 100) if tot_p > 0 else 0
+                    mix = p_sub['TaggedPitchType'].value_counts(normalize=True).head(3).multiply(100).round(0).to_dict()
+                    mix_str = ", ".join([f"{k} ({v:.0f}%)" for k, v in mix.items()])
+                    response_text = (
+                        f"🎯 **Scouting Report for {matched_pitcher} (Pitcher):**\n\n"
+                        f"* **Fastball Velocity:** Tops at **{max_v:.1f} mph**, sitting **{avg_v:.1f} mph**.\n"
+                        f"* **Strike Throwing:** Pounding the zone at **{k_pct:.1f}% strikes** over {tot_p} pitches.\n"
+                        f"* **Primary Repertoire:** {mix_str}."
+                    )
+                elif "velo" in q or "fastest" in q or "hardest" in q:
+                    top_arms = season_data.groupby('Pitcher')['RelSpeed'].max().nlargest(3).round(1)
+                    top_bats = season_data.groupby('Batter')['ExitSpeed'].max().nlargest(3).round(1)
+                    response_text = (
+                        f"🔥 **League Velocity Leaders:**\n\n"
+                        f"* **Pitchers (Peak FB):** 1. {top_arms.index[0]} ({top_arms.iloc[0]} mph) | 2. {top_arms.index[1]} ({top_arms.iloc[1]} mph) | 3. {top_arms.index[2]} ({top_arms.iloc[2]} mph)\n"
+                        f"* **Hitters (Max EV):** 1. {top_bats.index[0]} ({top_bats.iloc[0]} mph) | 2. {top_bats.index[1]} ({top_bats.iloc[1]} mph) | 3. {top_bats.index[2]} ({top_bats.iloc[2]} mph)"
+                    )
+                else:
+                    response_text = "I can inspect any player in the league! Try typing a player's name (e.g. *'How is Maddox Burnett performing?'* or *'What is Zayne Hookala's pitch mix?'*)."
+
+            st.markdown(response_text)
+            st.session_state["chat_history"].append({"role": "assistant", "content": response_text})
+
+st.divider()
 
 # =====================================================================
 # VIEW 1: LEAGUE LEADERBOARD HUB
