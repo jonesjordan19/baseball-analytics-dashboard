@@ -11,89 +11,70 @@ st.set_page_config(
     layout="wide"
 )
 
-# Registry of 2026 season games in Drive folder
-GAME_FILES = [
-    {"id": "1oychbUr3bienpfyRq-oa7jerfCfAkI0P", "name": "7-28-2026_04-08PM_Anchors 2026 x Red Hots 2026.csv"},
-    {"id": "1QPFkec3o2HKK_64F-2cRwzucpOZByfpT", "name": "7-27-2026_08-05PM_Royals 2026 x Red Hots 2026.csv"},
-    {"id": "1tGLmuS3b7nFsrLnGDpCwZK5mMlL2hloo", "name": "7-27-2026_03-43PM_Red Hots 2026 x Blue Crew 2026.csv"},
-    {"id": "1RmNZW7fKj87TrBZ1dP6bxn6UNOmz86tr", "name": "7-26-2026_07-24PM_Anchors 2026 x Royals 2026.csv"},
-    {"id": "1BYQuWzCFz9TeGccFg7mAdm5F_fZ6qT4V", "name": "7-26-2026_03-42PM_Red Hots 2026 x Blue Crew 2026.csv"},
-    {"id": "1_vfdohpD83P-aENXity-RYD7f6Vf7qDV", "name": "7-25-2026_06-35PM_Anchors 2026 x Red Hots 2026.csv"},
-    {"id": "1DWAQUJyuelU_RlQTkFS2bYCpx16vYHBl", "name": "7-25-2026_03-48PM_Royals 2026 x Blue Crew 2026.csv"},
-    {"id": "1ZEmd4aSsfm-mX9lVrPaSoqBHXqAEsjxF", "name": "7-24-2026_03-51PM_Royals 2026 x Red Hots 2026.csv"},
-    {"id": "1Pxj3BfAyDZFKNCrgW7PFKtewzz8akyeo", "name": "7-24-2026_08-27PM_Anchors 2026 x Blue Crew 2026.csv"},
-    {"id": "1C-RWWz4B8qwCvfjaX4_fnnIX2ZlvFzu_", "name": "7-22-2026_07-13PM_Royals 2026 x Blue Crew 2026.csv"},
-    {"id": "1N-PJsSojyacKQpa3wOzvgFiOk7CDyrlW", "name": "7-22-2026_03-36PM_Red Hots 2026 x Anchors 2026.csv"},
-    {"id": "1wTQanptOBiRPPQw7P5tabw--w0XexQ3S", "name": "7-21-2026_03-40PM_Royals 2026 x Red Hots 2026.csv"},
-    {"id": "1ynBLWRxsL9zVMTWjGDL0_7XLeHxnf1lt", "name": "7-21-2026_07-17PM_Blue Crew 2026 x Anchors 2026.csv"},
-    {"id": "12KwXvDNLYocKH7zN5K5BETqI6uN42sfX", "name": "7-20-2026_07-06PM_Red Hots 2026 x Blue Crew 2026.csv"},
-    {"id": "1XXaQj7yHImg3xwJ6WmH8tsAGbF8dXU5q", "name": "7-20-2026_03-54PM_Anchors 2026 x Royals 2026.csv"},
-    {"id": "15iMsmm-i7PhNXWCmF-HMxZt9QCl7wMmV", "name": "7-18-2026_06-40PM_Red Hots 2026 x Puerto Rico.csv"},
-    {"id": "16Y99weUeiqwM2qUYY36YwxxK2VnTh8k5", "name": "7-18-2026_03-35PM_Blue Crew 2026 x Red Hots 2026.csv"},
-    {"id": "1FeHyA34Uhy2cQ1P0SGPp4TRgdH_lQGjB", "name": "7-17-2026_07-32PM_Utah Yaks x Mexico.csv"},
-    {"id": "1gJVNviZP3Nk3SRAHuisbnSt4Nu463u7R", "name": "7-17-2026_04-12PM_Anchors 2026 x Red Hots 2026.csv"},
-    {"id": "1ts3wzyBkUmWHxdtEUd21UOBvymPSO-Yb", "name": "7-16-2026_11-58AM_Puerto Rico x Royals 2026.csv"},
-    {"id": "1JZL_ZBkJjmxi2oV0r5joar_dSnrtnNLe", "name": "7-17-2026_12-38PM_Royals 2026 x Blue Crew 2026.csv"},
-    {"id": "1jqh_SFCV28hMz99k18MqhGEaKZluwZ2u", "name": "7-16-2026_05-03PM_Mexico x Anchors 2026.csv"},
-    {"id": "1auv4HMpFtFKPchw3JOF7yenNE4NyubHC", "name": "7-16-2026_08-39AM_Utah Yaks x Red Hots 2026.csv"},
-    {"id": "1qoger5mG_U9rMWytwElfPa2ke3ij0ZJI", "name": "7-16-2026_02-50PM_Blue Crew 2026 x Aruba.csv"},
-    {"id": "1V-W408aXAK1LaYHZeHcRTKUpgrbGoxkA", "name": "7-14-2026_12-48PM_Red Hots 2026 x Mexico.csv"}
-]
+# ----------------- LIVE MULTI-SEASON DRIVE REGISTRY -----------------
+SEASONS = {
+    2026: "1Dm1NKu9Q2T_7BWZGkfg3PBNchtrvL-0u",
+    2027: "1hwepmyZ6az6hr8aaUeq1zNZYWHFUj2KR"
+}
 
-def download_drive_file(file_id):
-    """Downloads public Google Drive CSV bypassing the warning page."""
+def get_folder_csv_list(folder_id):
+    """Scrapes public Google Drive folder page to dynamically discover all CSV files."""
+    url = f"https://drive.google.com/drive/folders/{folder_id}"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        r = requests.get(url, headers=headers, timeout=15)
+        # Regex extracts [id, [filename.csv]] from Drive embedded payload
+        matches = re.findall(r'\["([a-zA-Z0-9_-]{28,45})",\["([^"]+\.csv)"', r.text)
+        return list(set(matches))
+    except Exception:
+        return []
+
+def download_csv(file_id):
+    """Pulls CSV binary stream directly bypassing virus scan checkpoints."""
     session = requests.Session()
     url = "https://docs.google.com/uc?export=download"
-    response = session.get(url, params={'id': file_id}, stream=True)
-    
-    # Check for confirmation token if Drive flags the file
-    for k, v in response.cookies.items():
-        if k.startswith('download_warning'):
-            response = session.get(url, params={'id': file_id, 'confirm': v}, stream=True)
-            break
-            
-    content = response.content
-    # Validate content is actually CSV and not an HTML error
-    if b"<html" in content[:100].lower():
+    try:
+        res = session.get(url, params={'id': file_id}, stream=True, timeout=20)
+        for k, v in res.cookies.items():
+            if k.startswith('download_warning'):
+                res = session.get(url, params={'id': file_id, 'confirm': v}, stream=True, timeout=20)
+                break
+        if b"<html" in res.content[:80].lower():
+            return None
+        return res.content
+    except Exception:
         return None
-    return content
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def load_all_game_telemetry():
+@st.cache_data(ttl=600, show_spinner=False)
+def build_telemetry_lake():
+    """Builds multi-year sabermetric lake automatically across 2026 and 2027+."""
     frames = []
-    progress_bar = st.progress(0, text="Fetching season game data...")
-    total = len(GAME_FILES)
     
-    for idx, item in enumerate(GAME_FILES):
-        progress_bar.progress((idx + 1) / total, text=f"Loading {item['name']}...")
-        content = download_drive_file(item['id'])
-        if content:
+    for year, folder_id in SEASONS.items():
+        csv_files = get_folder_csv_list(folder_id)
+        for file_id, file_name in csv_files:
+            raw_bytes = download_csv(file_id)
+            if not raw_bytes:
+                continue
             try:
-                df = pd.read_csv(io.BytesIO(content), low_memory=False)
+                df = pd.read_csv(io.BytesIO(raw_bytes), low_memory=False)
                 if df.empty or 'TaggedPitchType' not in df.columns:
                     continue
-
-                # Multi-season year determination
-                if 'Date' in df.columns and df['Date'].dropna().size > 0:
-                    df['ParsedDate'] = pd.to_datetime(df['Date'], errors='coerce')
-                    df['Season_Year'] = df['ParsedDate'].dt.year.fillna(2026).astype(int)
-                else:
-                    match = re.search(r"202\d", item['name'])
-                    df['Season_Year'] = int(match.group(0)) if match else 2026
-
-                df['Game_Source'] = item['name']
-
-                # Filter tracking artifacts
+                
+                # Tag season year from folder structure
+                df['Season_Year'] = int(year)
+                df['Game_Source'] = file_name
+                
+                # Filter launch monitor tracking artifacts
                 if 'RelSpeed' in df.columns:
                     df = df[(df['RelSpeed'] >= 35.0) & (df['RelSpeed'] <= 106.0)]
                 if 'isOutlier' in df.columns:
                     df = df[df['isOutlier'] != True]
-
+                    
                 frames.append(df)
             except Exception:
                 continue
                 
-    progress_bar.empty()
     if frames:
         return pd.concat(frames, ignore_index=True)
     return pd.DataFrame()
@@ -102,47 +83,55 @@ def load_all_game_telemetry():
 st.title("⚡ Marshalls League Data Engine")
 st.markdown("##### **Created by Jordan Jones** | *Next-Gen Ball Flight Kinematics & Player Development System*")
 
-data = load_all_game_telemetry()
+with st.spinner("Connecting to Google Drive and synchronizing season telemetry..."):
+    data = build_telemetry_lake()
 
 if data.empty:
-    st.error("No telemetry data could be downloaded. The Drive link permissions may need to be confirmed.")
+    st.error("No telemetry data could be loaded. Please ensure folder link sharing is set to 'Anyone with the link can view'.")
     st.stop()
 
 # ----------------- SIDEBAR CONTROLS -----------------
 st.sidebar.header("🎯 Data Control Room")
 
-# Multi-Season Filter
+# Multi-Year Filter
 available_years = sorted(data['Season_Year'].dropna().unique())
 selected_years = st.sidebar.multiselect("Season Filter", options=available_years, default=available_years)
 df_filtered = data[data['Season_Year'].isin(selected_years)]
 
-# Pitch Types
+# Pitcher Filter
+pitchers = sorted([p for p in df_filtered['Pitcher'].dropna().unique() if str(p).strip()])
+selected_pitcher = st.sidebar.selectbox("Pitcher Profile", options=["All Pitchers"] + pitchers)
+if selected_pitcher != "All Pitchers":
+    df_filtered = df_filtered[df_filtered['Pitcher'] == selected_pitcher]
+
+# Arsenal Filter
 pitch_types = sorted([pt for pt in df_filtered['TaggedPitchType'].dropna().unique() if str(pt).strip()])
 selected_pitches = st.sidebar.multiselect("Pitch Arsenal", options=pitch_types, default=pitch_types)
 df_filtered = df_filtered[df_filtered['TaggedPitchType'].isin(selected_pitches)]
 
 # ----------------- EXECUTIVE KPI CARDS -----------------
-kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
-kpi1.metric("Tracked Pitches", f"{len(df_filtered):,}")
+k1, k2, k3, k4, k5 = st.columns(5)
+k1.metric("Tracked Pitches", f"{len(df_filtered):,}")
 
-fb_data = df_filtered[df_filtered['TaggedPitchType'] == 'Fastball']
-avg_velo = fb_data['RelSpeed'].mean() if not fb_data.empty else df_filtered['RelSpeed'].mean()
-kpi2.metric("Peak FB Velo", f"{fb_data['RelSpeed'].max():.1f} mph" if not fb_data.empty else "N/A")
-kpi3.metric("Avg FB Velo", f"{avg_velo:.1f} mph" if pd.notna(avg_velo) else "N/A")
+fb_df = df_filtered[df_filtered['TaggedPitchType'] == 'Fastball']
+avg_velo = fb_df['RelSpeed'].mean() if not fb_df.empty else df_filtered['RelSpeed'].mean()
+k2.metric("Peak FB Velo", f"{fb_df['RelSpeed'].max():.1f} mph" if not fb_df.empty else "N/A")
+k3.metric("Avg FB Velo", f"{avg_velo:.1f} mph" if pd.notna(avg_velo) else "N/A")
 
-avg_spin = fb_data['SpinRate'].mean() if not fb_data.empty else df_filtered['SpinRate'].mean()
-kpi4.metric("Avg Spin Rate", f"{avg_spin:.0f} RPM" if pd.notna(avg_spin) else "N/A")
+avg_spin = fb_df['SpinRate'].mean() if not fb_df.empty else df_filtered['SpinRate'].mean()
+k4.metric("Avg Spin Rate", f"{avg_spin:.0f} RPM" if pd.notna(avg_spin) else "N/A")
 
 avg_ext = df_filtered['Extension'].mean() if 'Extension' in df_filtered.columns else None
-kpi5.metric("Avg Extension", f"{avg_ext:.1f} ft" if pd.notna(avg_ext) else "N/A")
+k5.metric("Avg Extension", f"{avg_ext:.1f} ft" if pd.notna(avg_ext) else "N/A")
 
 st.divider()
 
 # ----------------- ANALYTICAL MODULES -----------------
-tab_flight, tab_zone, tab_kinematic = st.tabs([
+tab_flight, tab_zone, tab_kinematic, tab_yoy = st.tabs([
     "🎯 Ball Flight & Pitch Shapes",
     "📐 Plate Distribution & Zone Matrix",
-    "⚡ Kinetic Chain & Energy Transfer"
+    "⚡ Kinetic Chain & Energy Transfer",
+    "📈 Multi-Season Development"
 ])
 
 # MODULE 1: FLIGHT & SHAPES
@@ -156,7 +145,7 @@ with tab_flight:
             y="InducedVertBreak",
             color="TaggedPitchType",
             hover_data=["RelSpeed", "SpinRate", "VertApprAngle"],
-            title="Pitch Movement Profile: Induced Vertical Break vs. Horizontal Break",
+            title="Pitch Movement Profile: Induced Vertical Break (IVB) vs. Horizontal Break (HB)",
             labels={"HorzBreak": "Horizontal Break (Inches)", "InducedVertBreak": "Induced Vertical Break (Inches)"},
             template="plotly_dark"
         )
@@ -167,7 +156,7 @@ with tab_flight:
     with c_table:
         st.markdown("#### **Arsenal Metrics Breakdown**")
         metric_cols = ['RelSpeed', 'SpinRate', 'InducedVertBreak', 'HorzBreak', 'Extension']
-        valid_cols = [col for col in metric_cols if col in df_filtered.columns]
+        valid_cols = [c for c in metric_cols if c in df_filtered.columns]
         summary_grid = df_filtered.groupby('TaggedPitchType')[valid_cols].mean().reset_index()
         st.dataframe(summary_grid.round(1), use_container_width=True, hide_index=True)
 
@@ -180,7 +169,7 @@ with tab_zone:
             y="PlateLocHeight",
             color="TaggedPitchType",
             hover_data=["RelSpeed", "VertApprAngle"],
-            title="Strike Zone Heat & Location Matrix (Catcher Perspective)",
+            title="Strike Zone Heat & Location Matrix (Catcher View)",
             labels={"PlateLocSide": "Horizontal Location (ft)", "PlateLocHeight": "Vertical Location (ft)"},
             template="plotly_dark"
         )
@@ -215,3 +204,19 @@ with tab_kinematic:
             st.info("No biomechanical sensor events recorded for this selection.")
     else:
         st.info("Kinetic metrics not found in this dataset.")
+
+# MODULE 4: MULTI-SEASON DEVELOPMENT
+with tab_yoy:
+    st.markdown("#### **Multi-Year Progression (2026 vs. Future Campaigns)**")
+    if len(available_years) > 1:
+        fig_yoy = px.box(
+            df_filtered,
+            x="TaggedPitchType",
+            y="RelSpeed",
+            color="Season_Year",
+            title="Velocity Migration Across Seasons",
+            template="plotly_dark"
+        )
+        st.plotly_chart(fig_yoy, use_container_width=True)
+    else:
+        st.success("Currently displaying 2026 Inaugural Season data. When you drag 2027 files into the 2027 folder next June, side-by-side progression charts will populate automatically.")
