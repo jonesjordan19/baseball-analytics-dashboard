@@ -15,14 +15,33 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ----------------- MOBILE-FIRST RESPONSIVE STYLING -----------------
+# ----------------- ELIMINATE SIDEBAR & OPTIMIZE TOP CONTROLS -----------------
 st.markdown("""
 <style>
+    /* Remove sidebar and mobile drawer toggle button completely */
+    [data-testid="stSidebar"] {
+        display: none !important;
+    }
+    [data-testid="stSidebarCollapsedControl"] {
+        display: none !important;
+    }
+    button[kind="header"] {
+        display: none !important;
+    }
+
+    /* Streamline mobile container padding */
+    .block-container {
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        padding-top: 1.2rem !important;
+        max-width: 100% !important;
+    }
+
     @media (max-width: 768px) {
         .block-container {
-            padding-left: 0.75rem !important;
-            padding-right: 0.75rem !important;
-            padding-top: 1rem !important;
+            padding-left: 0.6rem !important;
+            padding-right: 0.6rem !important;
+            padding-top: 0.8rem !important;
         }
         div[data-testid="stMetricValue"] {
             font-size: 1.25rem !important;
@@ -30,18 +49,9 @@ st.markdown("""
         div[data-testid="stMetricLabel"] {
             font-size: 0.75rem !important;
         }
-        h1 {
-            font-size: 1.6rem !important;
-        }
-        h2, h3 {
-            font-size: 1.3rem !important;
-        }
-        h4, h5 {
-            font-size: 1.05rem !important;
-        }
     }
     
-    /* Sports Card Button Styling for Leaderboard Rows */
+    /* Sports Card Leaderboard Buttons */
     div.stButton > button {
         width: 100% !important;
         text-align: left !important;
@@ -58,15 +68,14 @@ st.markdown("""
         border-color: #2563EB !important;
         background-color: #EFF6FF !important;
         color: #1D4ED8 !important;
-        transform: translateX(2px);
     }
 </style>
 """, unsafe_allow_html=True)
 
 MANIFEST_SHEET_ID = "1Xc3lx4ybIfp9R14ROhCWOD1RpnKIhbNYU76dYQUZdow"
 
-if "nav_radio" not in st.session_state:
-    st.session_state["nav_radio"] = "🏆 League Leaderboard Hub"
+if "nav_view" not in st.session_state:
+    st.session_state["nav_view"] = "🏆 Leaderboard Hub"
 if "selected_player" not in st.session_state:
     st.session_state["selected_player"] = None
 
@@ -255,7 +264,7 @@ def render_strike_zone_figure(df_pitches):
         ))
 
     fig.update_xaxes(range=[-2.2, 2.2], title="Horizontal Plate (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
-    fig.update_yaxes(range=[0.0, 4.5], title="Plate Height (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
+    fig.update_yaxes(range=[0.0, 4.5], title="Height from Ground (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
     fig.update_layout(height=380, margin=dict(l=10, r=10, t=25, b=10),
                       legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                       plot_bgcolor="rgba(245, 247, 250, 0.6)")
@@ -310,27 +319,22 @@ def render_field_spray_chart(batted_df):
 
 def select_player_callback(player_name, target_view):
     st.session_state["selected_player"] = player_name
-    st.session_state["nav_radio"] = target_view
+    st.session_state["nav_view"] = target_view
 
-# Unified Sports Card Leaderboard Row (Mobile & Desktop Friendly)
 def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, submetric_label, submetric_col, player_type, key_prefix):
-    target_view = "🔥 Individual Hitter Card" if player_type == "Hitter" else "🛡️ Individual Pitcher Card"
+    target_view = "🔥 Hitter Cards" if player_type == "Hitter" else "🛡️ Pitcher Cards"
     for idx, r in df_ranked.iterrows():
         p_name = str(r[name_col])
         m_val = r[metric_col]
         sub_val = r[submetric_col]
-        
-        # Format as a unified sports card label: #1 Player Name — 105.2 mph (89.1 avg)
         card_label = f"#{idx+1}   {p_name}   —   {m_val} {metric_label}  ({sub_val} {submetric_label})"
-        
         st.button(
-            card_label,
-            key=f"{key_prefix}_{idx}_{p_name}",
-            on_click=select_player_callback,
-            args=(p_name, target_view),
+            card_label, key=f"{key_prefix}_{idx}_{p_name}",
+            on_click=select_player_callback, args=(p_name, target_view),
             use_container_width=True
         )
 
+# ----------------- TOP HEADER -----------------
 st.title("⚡ Marshalls League Data Engine")
 st.markdown("##### **Created by Jordan Jones** | *Official WIN Reality SmartPark Analytics & Scouting Suite*")
 
@@ -341,39 +345,43 @@ if data.empty:
     st.warning("Telemetry is loading. Please check permissions on the Google Sheet.")
     st.stop()
 
-# ----------------- UNIVERSAL PLAYER SEARCH BAR -----------------
-all_batters = sorted([b for b in data['Batter'].dropna().unique() if str(b).strip()])
-all_pitchers = sorted([p for p in data['Pitcher'].dropna().unique() if str(p).strip()])
+# ----------------- TOP NAVIGATION & SEARCH HUB (REPLACES SIDEBAR) -----------------
+nav_cols = st.columns([1.2, 1.2, 1.2, 1.4])
+view_options = ["🏆 Leaderboard Hub", "🔥 Hitter Cards", "🛡️ Pitcher Cards", "📊 Team Game Summary"]
 
-player_options = ["🔍 Search & Jump to Any Player..."]
-player_options += [f"Hitter: {b}" for b in all_batters]
-player_options += [f"Pitcher: {p}" for p in all_pitchers]
+current_view_idx = view_options.index(st.session_state["nav_view"]) if st.session_state["nav_view"] in view_options else 0
 
-search_selection = st.selectbox("Quick Player Search", options=player_options, label_visibility="collapsed")
+selected_nav = nav_cols[0].radio(
+    "Navigation Mode",
+    options=view_options,
+    index=current_view_idx,
+    horizontal=False,
+    label_visibility="collapsed",
+    key="top_nav_radio"
+)
+st.session_state["nav_view"] = selected_nav
+
+# Season & Universal Search Controls
+available_years = sorted(data['Season_Year'].dropna().unique())
+selected_year = nav_cols[1].selectbox("Season Year", options=available_years, index=0)
+season_data = data[data['Season_Year'] == selected_year]
+
+all_batters = sorted([b for b in season_data['Batter'].dropna().unique() if str(b).strip()])
+all_pitchers = sorted([p for p in season_data['Pitcher'].dropna().unique() if str(p).strip()])
+player_search_list = ["🔍 Search & Jump to Any Player..."] + [f"Hitter: {b}" for b in all_batters] + [f"Pitcher: {p}" for p in all_pitchers]
+
+search_selection = nav_cols[2].selectbox("Quick Search", options=player_search_list, label_visibility="collapsed")
 if search_selection != "🔍 Search & Jump to Any Player...":
     if search_selection.startswith("Hitter: "):
-        h_name = search_selection.replace("Hitter: ", "")
-        st.session_state["selected_player"] = h_name
-        st.session_state["nav_radio"] = "🔥 Individual Hitter Card"
+        st.session_state["selected_player"] = search_selection.replace("Hitter: ", "")
+        st.session_state["nav_view"] = "🔥 Hitter Cards"
         st.rerun()
     elif search_selection.startswith("Pitcher: "):
-        p_name = search_selection.replace("Pitcher: ", "")
-        st.session_state["selected_player"] = p_name
-        st.session_state["nav_radio"] = "🛡️ Individual Pitcher Card"
+        st.session_state["selected_player"] = search_selection.replace("Pitcher: ", "")
+        st.session_state["nav_view"] = "🛡️ Pitcher Cards"
         st.rerun()
 
-st.sidebar.header("🎯 Navigation & Controls")
-report_options = [
-    "🏆 League Leaderboard Hub",
-    "🔥 Individual Hitter Card",
-    "🛡️ Individual Pitcher Card",
-    "📊 Team Game Summary"
-]
-report_scope = st.sidebar.radio("Navigation View", report_options, key="nav_radio")
-
-available_years = sorted(data['Season_Year'].dropna().unique())
-selected_year = st.sidebar.selectbox("Season Year", options=available_years, index=0)
-season_data = data[data['Season_Year'] == selected_year]
+st.divider()
 
 def display_shared_sequencing_legend():
     st.markdown("""
@@ -388,7 +396,7 @@ def display_shared_sequencing_legend():
 # =====================================================================
 # VIEW 1: LEAGUE LEADERBOARD HUB
 # =====================================================================
-if report_scope == "🏆 League Leaderboard Hub":
+if st.session_state["nav_view"] == "🏆 Leaderboard Hub":
     st.subheader(f"🏆 Marshalls League Official Leaderboard ({selected_year})")
     st.caption("Tap any player card below to view their full development profile:")
 
@@ -477,9 +485,9 @@ if report_scope == "🏆 League Leaderboard Hub":
 # =====================================================================
 # VIEW 2: INDIVIDUAL HITTER REPORT CARD
 # =====================================================================
-elif report_scope == "🔥 Individual Hitter Card":
-    if st.button("⬅️ Back to League Leaderboard"):
-        st.session_state["nav_radio"] = "🏆 League Leaderboard Hub"
+elif st.session_state["nav_view"] == "🔥 Hitter Cards":
+    if st.button("⬅️ Return to Leaderboard Hub"):
+        st.session_state["nav_view"] = "🏆 Leaderboard Hub"
         st.rerun()
 
     batters = sorted([b for b in season_data['Batter'].dropna().unique() if str(b).strip()])
@@ -491,11 +499,12 @@ elif report_scope == "🔥 Individual Hitter Card":
     if st.session_state.get("selected_player") in batters:
         default_batter_idx = batters.index(st.session_state["selected_player"])
 
-    selected_batter = st.sidebar.selectbox("Select Batter", options=batters, index=default_batter_idx)
+    col_h_sel, col_h_gm = st.columns([1.5, 1.5])
+    selected_batter = col_h_sel.selectbox("Select Batter", options=batters, index=default_batter_idx)
     st.session_state["selected_player"] = selected_batter
 
     player_games = ["All Games (Season Cumulative)"] + sorted([g for g in season_data[season_data['Batter'] == selected_batter]['Game_Source'].dropna().unique()])
-    selected_game = st.sidebar.selectbox("Game Filter", options=player_games, index=0)
+    selected_game = col_h_gm.selectbox("Scope Filter", options=player_games, index=0)
     
     b_data = season_data[season_data['Batter'] == selected_batter].copy()
     if selected_game != "All Games (Season Cumulative)":
@@ -535,7 +544,6 @@ elif report_scope == "🔥 Individual Hitter Card":
         else:
             st.info("**Aggression on strikes:** Attack early count fastballs in the strike zone.")
 
-    # KPI Layout: desktop columns wrap nicely on mobile
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Hard-Hit Rate (90+)", f"{len(hard_hits)}/{len(in_play)}" if len(in_play) > 0 else "0/0")[cite: 2]
     k2.metric("Average Exit Velo", f"{avg_ev:.1f} mph" if avg_ev > 0 else "N/A")[cite: 2]
@@ -618,9 +626,9 @@ elif report_scope == "🔥 Individual Hitter Card":
 # =====================================================================
 # VIEW 3: INDIVIDUAL PITCHER REPORT CARD
 # =====================================================================
-elif report_scope == "🛡️ Individual Pitcher Card":
-    if st.button("⬅️ Back to League Leaderboard"):
-        st.session_state["nav_radio"] = "🏆 League Leaderboard Hub"
+elif st.session_state["nav_view"] == "🛡️ Pitcher Cards":
+    if st.button("⬅️ Return to Leaderboard Hub"):
+        st.session_state["nav_view"] = "🏆 Leaderboard Hub"
         st.rerun()
 
     pitchers = sorted([p for p in season_data['Pitcher'].dropna().unique() if str(p).strip()])
@@ -632,11 +640,12 @@ elif report_scope == "🛡️ Individual Pitcher Card":
     if st.session_state.get("selected_player") in pitchers:
         default_pitcher_idx = pitchers.index(st.session_state["selected_player"])
 
-    selected_pitcher = st.sidebar.selectbox("Select Pitcher", options=pitchers, index=default_pitcher_idx)
+    col_p_sel, col_p_gm = st.columns([1.5, 1.5])
+    selected_pitcher = col_p_sel.selectbox("Select Pitcher", options=pitchers, index=default_pitcher_idx)
     st.session_state["selected_player"] = selected_pitcher
 
     pitcher_games = ["All Games (Season Cumulative)"] + sorted([g for g in season_data[season_data['Pitcher'] == selected_pitcher]['Game_Source'].dropna().unique()])
-    selected_game = st.sidebar.selectbox("Game Filter", options=pitcher_games, index=0)
+    selected_game = col_p_gm.selectbox("Scope Filter", options=pitcher_games, index=0)
 
     p_data = season_data[season_data['Pitcher'] == selected_pitcher].copy()
     if selected_game != "All Games (Season Cumulative)":
@@ -732,7 +741,7 @@ elif report_scope == "🛡️ Individual Pitcher Card":
 # =====================================================================
 else:
     all_game_list = sorted([g for g in season_data['Game_Source'].dropna().unique()])
-    selected_game = st.sidebar.selectbox("Select Game", options=all_game_list)
+    selected_game = st.selectbox("Select Game File", options=all_game_list)
     game_df = season_data[season_data['Game_Source'] == selected_game].copy()
 
     st.subheader("📋 Official Game Summary & Matchup Intelligence")
