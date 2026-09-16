@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import requests
 import io
-import re
+from concurrent.futures import ThreadPoolExecutor
 
 st.set_page_config(
     page_title="Marshalls League Data Engine",
@@ -11,75 +11,67 @@ st.set_page_config(
     layout="wide"
 )
 
-# ----------------- LIVE MULTI-SEASON DRIVE REGISTRY -----------------
-SEASONS = {
-    2026: "1Dm1NKu9Q2T_7BWZGkfg3PBNchtrvL-0u",
-    2027: "1hwepmyZ6az6hr8aaUeq1zNZYWHFUj2KR"
-}
+# ----------------- LIVE GOOGLE SHEET MANIFEST -----------------
+MANIFEST_SHEET_ID = "1Xc3lx4ybIfp9R14ROhCWOD1RpnKIhbNYU76dYQUZdow"
 
-def get_folder_csv_list(folder_id):
-    """Discovers CSV files from public Drive folder HTML."""
-    url = f"https://drive.google.com/drive/folders/{folder_id}"
-    try:
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=6)
-        matches = re.findall(r'\["([a-zA-Z0-9_-]{28,45})",\["([^"]+\.csv)"', r.text)
-        return list(set(matches))
-    except Exception:
-        return []
-
-def download_csv(file_id):
-    """Pulls individual CSV content quickly with a strict timeout."""
+def fetch_single_csv(args):
+    file_id, game_name, season_year = args
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
     try:
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, timeout=12)
         if res.status_code == 200 and b"<html" not in res.content[:80].lower():
-            return res.content
+            df = pd.read_csv(io.BytesIO(res.content), low_memory=False)
+            if not df.empty and 'TaggedPitchType' in df.columns:
+                df['Season_Year'] = int(season_year)
+                df['Game_Source'] = str(game_name)
+                
+                # Sanitize tracking data
+                if 'RelSpeed' in df.columns:
+                    df = df[(df['RelSpeed'] >= 35.0) & (df['RelSpeed'] <= 106.0)]
+                if 'isOutlier' in df.columns:
+                    df = df[df['isOutlier'] != True]
+                return df
     except Exception:
         pass
     return None
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def build_telemetry_lake():
+def load_marshalls_telemetry(sheet_id):
+    sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+    try:
+        manifest_df = pd.read_csv(sheet_url)
+    except Exception as e:
+        st.error(f"Could not read Game Manifest sheet: {e}")
+        return pd.DataFrame()
+
+    tasks = [
+        (str(row['File_ID']).strip(), str(row['Game_Name']).strip(), row['Season'])
+        for _, row in manifest_df.iterrows()
+        if pd.notna(row['File_ID'])
+    ]
+
+    # Parallel multi-threaded download for fast ingestion of all 76+ games
     frames = []
-    
-    for year, folder_id in SEASONS.items():
-        files = get_folder_csv_list(folder_id)
-        for file_id, file_name in files:
-            raw_bytes = download_csv(file_id)
-            if not raw_bytes:
-                continue
-            try:
-                df = pd.read_csv(io.BytesIO(raw_bytes), low_memory=False)
-                if df.empty or 'TaggedPitchType' not in df.columns:
-                    continue
-                
-                df['Season_Year'] = int(year)
-                df['Game_Source'] = file_name
-                
-                # Filter launch monitor tracking artifacts
-                if 'RelSpeed' in df.columns:
-                    df = df[(df['RelSpeed'] >= 35.0) & (df['RelSpeed'] <= 106.0)]
-                if 'isOutlier' in df.columns:
-                    df = df[df['isOutlier'] != True]
-                    
-                frames.append(df)
-            except Exception:
-                continue
-                
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = executor.map(fetch_single_csv, tasks)
+        for res in results:
+            if res is not None:
+                frames.append(res)
+
     if frames:
         return pd.concat(frames, ignore_index=True)
     return pd.DataFrame()
 
-# ----------------- PRO BRANDING & HEADER -----------------
+# ----------------- BRANDING & HEADER -----------------
 st.title("⚡ Marshalls League Data Engine")
 st.markdown("##### **Created by Jordan Jones** | *Next-Gen Ball Flight Kinematics & Player Development System*")
 
-# Fast Data Load
-data = build_telemetry_lake()
+with st.spinner("Streaming full multi-game telemetry lake..."):
+    data = load_marshalls_telemetry(MANIFEST_SHEET_ID)
 
 if data.empty:
-    st.info("⚡ Telemetry is synchronizing in the background or awaiting Drive access. Click 'Refresh Lake' below to retry.")
-    if st.button("🔄 Refresh Lake"):
+    st.warning("Telemetry is synchronizing. Verify that your Google Sheet has populated rows and 'Anyone with the link can view' is active.")
+    if st.button("🔄 Force Resync"):
         st.cache_data.clear()
         st.rerun()
     st.stop()
@@ -87,12 +79,12 @@ if data.empty:
 # ----------------- SIDEBAR CONTROLS -----------------
 st.sidebar.header("🎯 Data Control Room")
 
-# Multi-Year Filter
+# Multi-Season Filter
 available_years = sorted(data['Season_Year'].dropna().unique())
 selected_years = st.sidebar.multiselect("Season Filter", options=available_years, default=available_years)
 df_filtered = data[data['Season_Year'].isin(selected_years)]
 
-# Pitcher Filter
+# Pitcher Selection
 if 'Pitcher' in df_filtered.columns:
     pitchers = sorted([p for p in df_filtered['Pitcher'].dropna().unique() if str(p).strip()])
     if pitchers:
@@ -100,7 +92,7 @@ if 'Pitcher' in df_filtered.columns:
         if selected_pitcher != "All Pitchers":
             df_filtered = df_filtered[df_filtered['Pitcher'] == selected_pitcher]
 
-# Arsenal Filter
+# Arsenal Selection
 pitch_types = sorted([pt for pt in df_filtered['TaggedPitchType'].dropna().unique() if str(pt).strip()])
 selected_pitches = st.sidebar.multiselect("Pitch Arsenal", options=pitch_types, default=pitch_types)
 df_filtered = df_filtered[df_filtered['TaggedPitchType'].isin(selected_pitches)]
@@ -110,7 +102,7 @@ k1, k2, k3, k4, k5 = st.columns(5)
 k1.metric("Tracked Pitches", f"{len(df_filtered):,}")
 
 fb_df = df_filtered[df_filtered['TaggedPitchType'] == 'Fastball']
-avg_velo = fb_data['RelSpeed'].mean() if not fb_df.empty else df_filtered['RelSpeed'].mean()
+avg_velo = fb_df['RelSpeed'].mean() if not fb_df.empty else df_filtered['RelSpeed'].mean()
 k2.metric("Peak FB Velo", f"{fb_df['RelSpeed'].max():.1f} mph" if not fb_df.empty else "N/A")
 k3.metric("Avg FB Velo", f"{avg_velo:.1f} mph" if pd.notna(avg_velo) else "N/A")
 
@@ -215,4 +207,4 @@ with tab_yoy:
         )
         st.plotly_chart(fig_yoy, use_container_width=True)
     else:
-        st.success("Currently displaying 2026 Inaugural Season data. When 2027 files are placed into the 2027 folder next June, side-by-side progression charts will populate automatically.")
+        st.success("Currently displaying 2026 Inaugural Season data. When 2027 files are populated in the Google Sheet, side-by-side progression charts will populate automatically.")
