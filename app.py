@@ -78,6 +78,8 @@ if "selected_player" not in st.session_state:
     st.session_state["selected_player"] = None
 if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []
+if "date_filter_range" not in st.session_state:
+    st.session_state["date_filter_range"] = (date(2026, 6, 1), date(2026, 7, 31))
 
 def extract_game_date(game_source):
     match = re.search(r"(\d{1,2})-(\d{1,2})-(\d{4})", str(game_source))
@@ -281,7 +283,7 @@ def render_strike_zone_figure(df_pitches):
         fig.add_trace(go.Scatter(
             x=contact_p['PlateLocSide'], y=contact_p['PlateLocHeight'],
             mode='markers', name="In Play", hovertext=hover_contact, hoverinfo="text",
-            marker=dict(size=15, color='rgba(0,0,0,0)', line=dict(color='#EAB308', width=3))
+            marker=dict(size=16, color='rgba(0,0,0,0)', line=dict(color='#EAB308', width=3))
         ))
 
     fig.update_xaxes(range=[-2.2, 2.2], title="Horizontal Plate (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
@@ -389,21 +391,29 @@ all_dates = sorted(season_raw['ParsedDate'].dropna().unique())
 min_d = all_dates[0] if all_dates else date(2026, 6, 1)
 max_d = all_dates[-1] if all_dates else date(2026, 8, 15)
 
-# Target default window: June 1, 2026 to July 31, 2026
-target_start = max(date(2026, 6, 1), min_d)
-target_end = min(date(2026, 7, 31), max_d)
-if target_start > target_end:
-    target_start, target_end = min_d, max_d
+# Enforce default June 1 to July 31 window managed safely via session state
+default_start = max(date(2026, 6, 1), min_d)
+default_end = min(date(2026, 7, 31), max_d)
+if default_start > default_end:
+    default_start, default_end = min_d, max_d
+
+# Check session state for date range initialization
+if "date_filter_range" not in st.session_state:
+    st.session_state["date_filter_range"] = (default_start, default_end)
 
 date_range = nav_cols[2].date_input(
     "Date Range",
-    value=(target_start, target_end),
+    value=st.session_state["date_filter_range"],
     min_value=min_d,
     max_value=max_d,
-    label_visibility="collapsed"
+    label_visibility="collapsed",
+    key="date_picker_widget"
 )
 
-# Apply active date range
+if date_range != st.session_state["date_filter_range"]:
+    st.session_state["date_filter_range"] = date_range
+
+# Apply active date range filter
 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
     start_d, end_d = date_range
     season_data = season_raw[(season_raw['ParsedDate'] >= start_d) & (season_raw['ParsedDate'] <= end_d)].copy()
@@ -656,18 +666,14 @@ elif st.session_state["nav_view"] == "🔥 Hitter Cards":
     with t1:
         if max_ev >= 95:
             st.success(f"**Barrel was loud:** 100+ exit velo recorded ({max_ev:.1f} mph). Pure collegiate power.")
-        elif avg_ev >= 88:
-            st.success(f"**Consistent contact:** Solid contact quality averaging {avg_ev:.1f} mph off the bat.")
         else:
-            st.info("**Working the counts:** Fought into deep counts and saw quality pitches.")
+            st.info(f"**Solid contact:** Contact quality averaging {avg_ev:.1f} mph off the bat.")
 
     with t2:
         if len(ground_balls) > len(fly_balls) and len(in_play) > 0:
-            st.warning(f"**Pick it up:** {len(ground_balls)} of {len(in_play)} balls in play stayed on the ground. Match the pitch plane and elevate.")
-        elif len(sweet_spot) > 0:
-            st.success(f"**Good angles:** {len(sweet_spot)} of {len(in_play)} balls in play were squared in the 8°-32° sweet-spot zone.")
+            st.warning(f"**Elevate:** {len(ground_balls)} of {len(in_play)} balls in play stayed on the ground.")
         else:
-            st.info("**Aggression on strikes:** Attack early count fastballs in the strike zone.")
+            st.success(f"**Good launch angles:** Squared up the sweet-spot zone effectively.")
 
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Hard-Hit Rate (90+)", f"{len(hard_hits)}/{len(in_play)}" if len(in_play) > 0 else "0/0")
