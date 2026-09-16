@@ -361,7 +361,6 @@ if data.empty:
     st.warning("Telemetry is loading. Please check permissions on the Google Sheet.")
     st.stop()
 
-# Ensure ParsedDate is always present even if data was cached prior to date parsing
 if 'ParsedDate' not in data.columns:
     data['ParsedDate'] = data['Game_Source'].apply(extract_game_date)
 
@@ -390,9 +389,15 @@ all_dates = sorted(season_raw['ParsedDate'].dropna().unique())
 min_d = all_dates[0] if all_dates else date(2026, 6, 1)
 max_d = all_dates[-1] if all_dates else date(2026, 8, 15)
 
+# Target default window: June 1, 2026 to July 31, 2026
+target_start = max(date(2026, 6, 1), min_d)
+target_end = min(date(2026, 7, 31), max_d)
+if target_start > target_end:
+    target_start, target_end = min_d, max_d
+
 date_range = nav_cols[2].date_input(
     "Date Range",
-    value=(min_d, max_d),
+    value=(target_start, target_end),
     min_value=min_d,
     max_value=max_d,
     label_visibility="collapsed"
@@ -812,18 +817,18 @@ elif st.session_state["nav_view"] == "🛡️ Pitcher Cards":
     p_col1, p_col2 = st.columns(2)
     with p_col1:
         st.markdown("#### **Pitch Movement (Pitcher's View)**")
-        fig_mov = px.scatter(
+        fig_m = px.scatter(
             p_data, x="HorzBreak", y="InducedVertBreak",
             color="TaggedPitchType", hover_data=["RelSpeed", "SpinRate"],
             labels={"HorzBreak": "Horizontal Break (HB) [in]", "InducedVertBreak": "Induced Vertical Break (IVB) [in]"},
             height=380
         )
-        fig_mov.update_xaxes(range=[-25, 25], gridcolor="rgba(0,0,0,0.06)")
-        fig_mov.update_yaxes(range=[-25, 25], gridcolor="rgba(0,0,0,0.06)")
-        fig_mov.add_hline(y=0, line_dash="dash", line_color="#888888")
-        fig_mov.add_vline(x=0, line_dash="dash", line_color="#888888")
-        fig_mov.update_layout(plot_bgcolor="rgba(245, 247, 250, 0.6)")
-        st.plotly_chart(fig_mov, use_container_width=True)
+        fig_m.update_xaxes(range=[-25, 25], gridcolor="rgba(0,0,0,0.06)")
+        fig_m.update_yaxes(range=[-25, 25], gridcolor="rgba(0,0,0,0.06)")
+        fig_m.add_hline(y=0, line_dash="dash", line_color="#888888")
+        fig_m.add_vline(x=0, line_dash="dash", line_color="#888888")
+        fig_m.update_layout(plot_bgcolor="rgba(245, 247, 250, 0.6)")
+        st.plotly_chart(fig_m, use_container_width=True)
 
     with p_col2:
         st.markdown("#### **Location & Damage Allowed (Catcher's View)**")
