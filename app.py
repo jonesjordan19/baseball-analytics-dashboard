@@ -142,13 +142,13 @@ def enrich_pitch_sequencing_data(df_input):
             return None
         call = str(row['PrevPitchCall']).lower()
         if 'ball' in call or 'hitby' in call:
-            return 'AB'   # After Ball
+            return 'AB'
         elif 'strikecalled' in call:
-            return 'ACS'  # After Called Strike
+            return 'ACS'
         elif 'swinging' in call:
-            return 'AW'   # After Whiff
+            return 'AW'
         elif 'foul' in call:
-            return 'AF'   # After Foul
+            return 'AF'
         return None
 
     df_seq['PitchSeqBucket'] = df_seq.apply(get_pitch_seq_cat, axis=1)
@@ -361,7 +361,6 @@ available_years = sorted(data['Season_Year'].dropna().unique())
 selected_year = st.sidebar.selectbox("Season Year", options=available_years, index=0)
 season_data = data[data['Season_Year'] == selected_year]
 
-# Shared Legend Banner HTML Component
 def display_shared_sequencing_legend():
     st.markdown("""
         <div style='display: flex; gap: 24px; align-items: center; margin-bottom: 8px; margin-top: 4px;'>
@@ -513,7 +512,7 @@ elif report_scope == "🔥 Individual Hitter Card":
     t1, t2 = st.columns(2)
     with t1:
         if max_ev >= 95:
-            st.success(f"**Barrel was loud:** 100+ exit velo recorded ({max_ev:.1f} mph). Pure collegiate power.")[cite: 2]
+            st.success(f"**Barrel was loud:** 100+ exit velo recorded ({max_ev:.1f} mph). Pure collegiate power.")
         elif avg_ev >= 88:
             st.success(f"**Consistent contact:** Solid contact quality averaging {avg_ev:.1f} mph off the bat.")
         else:
@@ -521,24 +520,24 @@ elif report_scope == "🔥 Individual Hitter Card":
 
     with t2:
         if len(ground_balls) > len(fly_balls) and len(in_play) > 0:
-            st.warning(f"**Pick it up:** {len(ground_balls)} of {len(in_play)} balls in play stayed on the ground. Match the pitch plane and elevate.")[cite: 2]
+            st.warning(f"**Pick it up:** {len(ground_balls)} of {len(in_play)} balls in play stayed on the ground. Match the pitch plane and elevate.")
         elif len(sweet_spot) > 0:
-            st.success(f"**Good angles:** {len(sweet_spot)} of {len(in_play)} balls in play were squared in the 8°-32° sweet-spot zone.")[cite: 2]
+            st.success(f"**Good angles:** {len(sweet_spot)} of {len(in_play)} balls in play were squared in the 8°-32° sweet-spot zone.")
         else:
             st.info("**Aggression on strikes:** Attack early count fastballs in the strike zone.")
 
     k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Hard-Hit Rate (90+)", f"{len(hard_hits)}/{len(in_play)}" if len(in_play) > 0 else "0/0")[cite: 2]
-    k2.metric("Average Exit Velo", f"{avg_ev:.1f} mph" if avg_ev > 0 else "N/A")[cite: 2]
-    k3.metric("Max Exit Velo", f"{max_ev:.1f} mph" if max_ev > 0 else "N/A")[cite: 2]
-    k4.metric("Max Distance", f"{max_dist:.0f} ft" if max_dist > 0 else "N/A")[cite: 2]
-    k5.metric("Pitches / Swings", f"{total_pitches} / {swings}")[cite: 2]
+    k1.metric("Hard-Hit Rate (90+)", f"{len(hard_hits)}/{len(in_play)}" if len(in_play) > 0 else "0/0")
+    k2.metric("Average Exit Velo", f"{avg_ev:.1f} mph" if avg_ev > 0 else "N/A")
+    k3.metric("Max Exit Velo", f"{max_ev:.1f} mph" if max_ev > 0 else "N/A")
+    k4.metric("Max Distance", f"{max_dist:.0f} ft" if max_dist > 0 else "N/A")
+    k5.metric("Pitches / Swings", f"{total_pitches} / {swings}")
 
     st.divider()
 
     col_zone, col_spray = st.columns([1, 1])
     with col_zone:
-        st.markdown("#### **Pitches Seen (Catcher's View)**")[cite: 2]
+        st.markdown("#### **Pitches Seen (Catcher's View)**")
         if 'PlateLocSide' in b_data.columns and 'PlateLocHeight' in b_data.columns:
             st.plotly_chart(render_strike_zone_figure(b_data), use_container_width=True)
 
@@ -562,8 +561,8 @@ elif report_scope == "🔥 Individual Hitter Card":
         st.plotly_chart(fig_pseq, use_container_width=True)
 
     with seq_c2:
-        st.markdown("##### **Count Sequencing**")[cite: 1, 3]
-        order_cseq = ['1P', 'Ahead', 'Behind', 'Even', 'Full'][cite: 1, 3]
+        st.markdown("##### **Count Sequencing**")
+        order_cseq = ['1P', 'Ahead', 'Behind', 'Even', 'Full']
         fig_cseq = render_100pct_stacked_bar(b_data, 'CountSeqBucket', order_cseq, show_legend=False)
         st.plotly_chart(fig_cseq, use_container_width=True)
 
@@ -577,34 +576,34 @@ elif report_scope == "🔥 Individual Hitter Card":
     st.divider()
 
     # AT-BAT SUMMARY LOG
-    st.markdown("#### **At-Bat Summary Log**")[cite: 2]
+    st.markdown("#### **At-Bat Summary Log**")
     if not in_play.empty:
         def categorize_trajectory(row):
             la = row.get('Angle', 0)
-            if la < 8: return "Ground Ball"[cite: 2]
-            elif 8 <= la <= 32: return "Line Drive"[cite: 2]
-            elif 32 < la <= 50: return "Fly Ball"[cite: 2]
+            if la < 8: return "Ground Ball"
+            elif 8 <= la <= 32: return "Line Drive"
+            elif 32 < la <= 50: return "Fly Ball"
             return "Pop Up"
 
         def categorize_direction(row):
             d = row.get('Direction', 0)
-            if d < -15: return "Left"[cite: 2]
-            elif -15 <= d <= 15: return "Center"[cite: 2]
-            return "Right"[cite: 2]
+            if d < -15: return "Left"
+            elif -15 <= d <= 15: return "Center"
+            return "Right"
 
         in_play_display = in_play.copy()
-        in_play_display['Contact'] = in_play_display.apply(categorize_trajectory, axis=1)[cite: 2]
-        in_play_display['Field'] = in_play_display.apply(categorize_direction, axis=1)[cite: 2]
-        in_play_display['Count'] = in_play_display.apply(lambda r: f"{int(r.get('Balls', 0))}-{int(r.get('Strikes', 0))}", axis=1)[cite: 2]
-        in_play_display['Exit Velocity'] = in_play_display['ExitSpeed'].round(1).astype(str) + " mph"[cite: 2]
-        in_play_display['Launch Angle'] = in_play_display['Angle'].round(0).astype(int).astype(str) + "°"[cite: 2]
+        in_play_display['Contact'] = in_play_display.apply(categorize_trajectory, axis=1)
+        in_play_display['Field'] = in_play_display.apply(categorize_direction, axis=1)
+        in_play_display['Count'] = in_play_display.apply(lambda r: f"{int(r.get('Balls', 0))}-{int(r.get('Strikes', 0))}", axis=1)
+        in_play_display['Exit Velocity'] = in_play_display['ExitSpeed'].round(1).astype(str) + " mph"
+        in_play_display['Launch Angle'] = in_play_display['Angle'].round(0).astype(int).astype(str) + "°"
         in_play_display['Distance (ft)'] = in_play_display['Distance'].fillna(0).round(0).astype(int).astype(str) + " ft"
 
-        display_cols = ['Game_Source', 'Inning', 'Count', 'PlayResult', 'Contact', 'Exit Velocity', 'Launch Angle', 'Distance (ft)', 'Field'][cite: 2]
+        display_cols = ['Game_Source', 'Inning', 'Count', 'PlayResult', 'Contact', 'Exit Velocity', 'Launch Angle', 'Distance (ft)', 'Field']
         valid_disp_cols = [c for c in display_cols if c in in_play_display.columns]
         
         st.dataframe(
-            in_play_display[valid_disp_cols].rename(columns={'Game_Source': 'Game', 'PlayResult': 'Outcome'}),[cite: 2]
+            in_play_display[valid_disp_cols].rename(columns={'Game_Source': 'Game', 'PlayResult': 'Outcome'}),
             use_container_width=True,
             hide_index=True
         )
@@ -638,45 +637,45 @@ elif report_scope == "🛡️ Individual Pitcher Card":
 
     p_data = enrich_pitch_sequencing_data(p_data)
 
-    total_p = len(p_data)[cite: 1]
+    total_p = len(p_data)
     strikes = len(p_data[p_data['PitchCall'].astype(str).str.contains("Strike|Foul|InPlay", case=False, na=False)])
-    strike_pct = (strikes / total_p * 100) if total_p > 0 else 0[cite: 1]
+    strike_pct = (strikes / total_p * 100) if total_p > 0 else 0
     
     first_pitches = p_data[p_data['PitchofPA'] == 1]
     fp_strikes = len(first_pitches[first_pitches['PitchCall'].astype(str).str.contains("Strike|Foul|InPlay", case=False, na=False)])
-    fp_strike_pct = (fp_strikes / len(first_pitches) * 100) if len(first_pitches) > 0 else 0[cite: 1]
+    fp_strike_pct = (fp_strikes / len(first_pitches) * 100) if len(first_pitches) > 0 else 0
     
     fb_df = p_data[p_data['TaggedPitchType'] == 'Fastball']
-    avg_fb = fb_df['RelSpeed'].mean() if not fb_df.empty else 0[cite: 1]
-    max_fb = fb_df['RelSpeed'].max() if not fb_df.empty else 0[cite: 1]
+    avg_fb = fb_df['RelSpeed'].mean() if not fb_df.empty else 0
+    max_fb = fb_df['RelSpeed'].max() if not fb_df.empty else 0
 
-    st.subheader(f"Pitcher Postgame Report: **{selected_pitcher}**")[cite: 1]
+    st.subheader(f"Pitcher Postgame Report: **{selected_pitcher}**")
     st.caption(f"Scope: {selected_game} | Season: {selected_year}")
 
     col_t1, col_t2 = st.columns(2)
     with col_t1:
         if fp_strike_pct >= 65:
-            st.success(f"**Pounded the zone early:** {fp_strike_pct:.0f}% first-pitch strikes. Set the tone and dictated counts.")[cite: 1]
+            st.success(f"**Pounded the zone early:** {fp_strike_pct:.0f}% first-pitch strikes. Set the tone and dictated counts.")
         else:
-            st.warning(f"**Mix pitch one:** First-pitch strike rate was {fp_strike_pct:.0f}%. Get ahead early to open secondary pitches.")[cite: 1, 9]
+            st.warning(f"**Mix pitch one:** First-pitch strike rate was {fp_strike_pct:.0f}%. Get ahead early to open secondary pitches.")
     with col_t2:
         if strike_pct >= 62:
-            st.success(f"**In the zone all day:** {strike_pct:.0f}% total strikes. Filled up the zone.")[cite: 1, 9]
+            st.success(f"**In the zone all day:** {strike_pct:.0f}% total strikes. Filled up the zone.")
         else:
             st.info(f"**Count control:** Focus on winning 1-1 and 2-2 counts to avoid deep pitch counts.")
 
     pk1, pk2, pk3, pk4, pk5 = st.columns(5)
-    pk1.metric("Total Pitches", f"{total_p}")[cite: 1]
-    pk2.metric("Strike %", f"{strike_pct:.0f}%")[cite: 1]
-    pk3.metric("Avg FB Velo", f"{avg_fb:.1f} mph" if avg_fb > 0 else "N/A")[cite: 1]
-    pk4.metric("Max FB Velo", f"{max_fb:.1f} mph" if max_fb > 0 else "N/A")[cite: 1]
-    pk5.metric("First-Pitch Strike %", f"{fp_strike_pct:.0f}%")[cite: 1]
+    pk1.metric("Total Pitches", f"{total_p}")
+    pk2.metric("Strike %", f"{strike_pct:.0f}%")
+    pk3.metric("Avg FB Velo", f"{avg_fb:.1f} mph" if avg_fb > 0 else "N/A")
+    pk4.metric("Max FB Velo", f"{max_fb:.1f} mph" if max_fb > 0 else "N/A")
+    pk5.metric("First-Pitch Strike %", f"{fp_strike_pct:.0f}%")
 
     st.divider()
 
     p_col1, p_col2 = st.columns([1.1, 1.3])
     with p_col1:
-        st.markdown("#### **Pitch Movement (Pitcher's View)**")[cite: 1]
+        st.markdown("#### **Pitch Movement (Pitcher's View)**")
         fig_mov = px.scatter(
             p_data, x="HorzBreak", y="InducedVertBreak",
             color="TaggedPitchType", hover_data=["RelSpeed", "SpinRate"],
@@ -691,7 +690,7 @@ elif report_scope == "🛡️ Individual Pitcher Card":
         st.plotly_chart(fig_mov, use_container_width=True)
 
     with p_col2:
-        st.markdown("#### **Location & Damage Allowed (Catcher's View)**")[cite: 1]
+        st.markdown("#### **Location & Damage Allowed (Catcher's View)**")
         if 'PlateLocSide' in p_data.columns and 'PlateLocHeight' in p_data.columns:
             st.plotly_chart(render_strike_zone_figure(p_data), use_container_width=True)
 
@@ -711,8 +710,8 @@ elif report_scope == "🛡️ Individual Pitcher Card":
         st.plotly_chart(fig_p_pseq, use_container_width=True)
 
     with p_seq_c2:
-        st.markdown("##### **Count Sequencing**")[cite: 1, 3]
-        order_cseq = ['1P', 'Ahead', 'Behind', 'Even', 'Full'][cite: 1, 3]
+        st.markdown("##### **Count Sequencing**")
+        order_cseq = ['1P', 'Ahead', 'Behind', 'Even', 'Full']
         fig_p_cseq = render_100pct_stacked_bar(p_data, 'CountSeqBucket', order_cseq, show_legend=False)
         st.plotly_chart(fig_p_cseq, use_container_width=True)
 
@@ -731,7 +730,7 @@ else:
     selected_game = st.sidebar.selectbox("Game Select", options=games)
     active_data = season_data[season_data['Game_Source'] == selected_game] if selected_game != "All Games (Season Cumulative)" else season_data
 
-    st.subheader(f"Team Postgame Benchmark Report")[cite: 2]
+    st.subheader(f"Team Postgame Benchmark Report")
     st.caption(f"Game: {selected_game} | Season: {selected_year}")
 
     batted_team = active_data[active_data['ExitSpeed'].notna() & (active_data['ExitSpeed'] >= 40)]
@@ -741,26 +740,26 @@ else:
     hh_rate = (hard_hits_team / len(batted_team) * 100) if len(batted_team) > 0 else 0
     sw_rate = (sweet_spot_team / len(batted_team) * 100) if len(batted_team) > 0 else 0
 
-    st.markdown("#### **Team Performance vs. College Targets**")[cite: 2]
+    st.markdown("#### **Team Performance vs. College Targets**")
     t1, t2 = st.columns(2)
     with t1:
-        st.write(f"**Hard-Hit Rate (90+ MPH): {hh_rate:.0f}%** *(Target: 40%+)*")[cite: 2]
+        st.write(f"**Hard-Hit Rate (90+ MPH): {hh_rate:.0f}%** *(Target: 40%+)*")
         st.progress(min(int(hh_rate) / 100, 1.0))
-        st.write(f"**Launch Angle Sweet-Spot % (8°-32°): {sw_rate:.0f}%** *(Target: 35%+)*")[cite: 2]
+        st.write(f"**Launch Angle Sweet-Spot % (8°-32°): {sw_rate:.0f}%** *(Target: 35%+)*")
         st.progress(min(int(sw_rate) / 100, 1.0))
 
     with t2:
         gb_count = len(batted_team[batted_team['Angle'] < 8])
         ld_count = len(batted_team[(batted_team['Angle'] >= 8) & (batted_team['Angle'] <= 32)])
         total_bip = len(batted_team)
-        st.write(f"**Line-Drive %: {(ld_count/total_bip*100):.0f}%** *(Target: 25%+)*" if total_bip > 0 else "Line Drive %: N/A")[cite: 2]
+        st.write(f"**Line-Drive %: {(ld_count/total_bip*100):.0f}%** *(Target: 25%+)*" if total_bip > 0 else "Line Drive %: N/A")
         st.progress(min((ld_count/total_bip) if total_bip > 0 else 0, 1.0))
-        st.write(f"**Ground-Ball %: {(gb_count/total_bip*100):.0f}%** *(Target: Keep under 40%)*" if total_bip > 0 else "Ground Ball %: N/A")[cite: 2]
+        st.write(f"**Ground-Ball %: {(gb_count/total_bip*100):.0f}%** *(Target: Keep under 40%)*" if total_bip > 0 else "Ground Ball %: N/A")
         st.progress(min((gb_count/total_bip) if total_bip > 0 else 0, 1.0))
 
     st.divider()
 
-    st.markdown("#### **Hitter Leaderboard**")[cite: 2]
+    st.markdown("#### **Hitter Leaderboard**")
     if 'Batter' in active_data.columns:
         leaderboard = active_data[active_data['ExitSpeed'].notna()].groupby('Batter').agg({
             'ExitSpeed': ['count', 'mean', 'max'],
