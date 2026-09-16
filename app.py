@@ -25,7 +25,7 @@ def fetch_single_csv(args):
                 df['Season_Year'] = int(season_year)
                 df['Game_Source'] = str(game_name)
                 
-                # Sanitize outliers
+                # Sanitize tracking errors
                 if 'RelSpeed' in df.columns:
                     df = df[(df['RelSpeed'] >= 35.0) & (df['RelSpeed'] <= 106.0)]
                 if 'isOutlier' in df.columns:
@@ -67,10 +67,7 @@ def load_marshalls_telemetry(sheet_id):
     return pd.DataFrame()
 
 def render_strike_zone_figure(df_pitches):
-    """Draws a professional catcher's view strike zone with 9 inner quadrants and home plate."""
     fig = go.Figure()
-
-    # 1. Non-contact pitches
     non_contact = df_pitches[df_pitches['ExitSpeed'].isna() | (df_pitches['ExitSpeed'] < 40)]
     for ptype, group in non_contact.groupby('TaggedPitchType'):
         hover_info = group.apply(lambda r: f"{ptype} | {r.get('RelSpeed', 0):.1f} mph<br>Count: {r.get('Balls', 0)}-{r.get('Strikes', 0)}<br>Call: {r.get('PitchCall', '')}", axis=1)
@@ -79,10 +76,9 @@ def render_strike_zone_figure(df_pitches):
             mode='markers', name=ptype,
             hovertext=hover_info,
             hoverinfo="text",
-            marker=dict(size=12, opacity=0.85)
+            marker=dict(size=11, opacity=0.85)
         ))
 
-    # 2. Contact / Balls in Play (Gold Rings matching WIN Reality)
     contact_p = df_pitches[df_pitches['ExitSpeed'].notna() & (df_pitches['ExitSpeed'] >= 40)]
     if not contact_p.empty:
         hover_contact = contact_p.apply(lambda r: f"CONTACT: {r.get('TaggedPitchType', '')} | {r.get('RelSpeed', 0):.1f} mph<br>EV: {r.get('ExitSpeed', 0):.1f} mph | LA: {r.get('Angle', 0):.0f}°<br>Result: {r.get('PlayResult', '')}", axis=1)
@@ -95,79 +91,181 @@ def render_strike_zone_figure(df_pitches):
                         line=dict(color='#FFD700', width=3.5))
         ))
 
-    # 3. Outer Strike Zone Box (-0.83 to +0.83 ft wide, 1.5 to 3.5 ft high)
     fig.add_shape(type="rect", x0=-0.83, y0=1.5, x1=0.83, y1=3.5,
                   line=dict(color="#FFFFFF", width=3))
 
-    # 4. Inner 9-Quadrant Grid Lines
     x_third = 1.66 / 3.0
     y_third = 2.0 / 3.0
-    # Vertical grid lines
     fig.add_shape(type="line", x0=-0.83 + x_third, y0=1.5, x1=-0.83 + x_third, y1=3.5,
                   line=dict(color="rgba(255,255,255,0.25)", width=1.5, dash="dot"))
     fig.add_shape(type="line", x0=0.83 - x_third, y0=1.5, x1=0.83 - x_third, y1=3.5,
                   line=dict(color="rgba(255,255,255,0.25)", width=1.5, dash="dot"))
-    # Horizontal grid lines
     fig.add_shape(type="line", x0=-0.83, y0=1.5 + y_third, x1=0.83, y1=1.5 + y_third,
                   line=dict(color="rgba(255,255,255,0.25)", width=1.5, dash="dot"))
     fig.add_shape(type="line", x0=-0.83, y0=3.5 - y_third, x1=0.83, y1=3.5 - y_third,
                   line=dict(color="rgba(255,255,255,0.25)", width=1.5, dash="dot"))
 
-    # 5. Home Plate Pentagon at Bottom
     fig.add_trace(go.Scatter(
         x=[-0.708, 0.708, 0.708, 0.0, -0.708, -0.708],
         y=[0.6, 0.6, 0.45, 0.25, 0.45, 0.6],
-        fill="toself",
-        fillcolor="rgba(200, 200, 200, 0.3)",
+        fill="toself", fillcolor="rgba(200, 200, 200, 0.3)",
         line=dict(color="rgba(255, 255, 255, 0.7)", width=2),
-        mode="lines",
-        showlegend=False,
-        hoverinfo="skip"
+        mode="lines", showlegend=False, hoverinfo="skip"
     ))
 
     fig.update_xaxes(range=[-2.2, 2.2], title="Horizontal Plate Location (ft)", zeroline=False, gridcolor="rgba(255,255,255,0.08)")
     fig.update_yaxes(range=[0.0, 4.5], title="Height from Ground (ft)", zeroline=False, gridcolor="rgba(255,255,255,0.08)")
-    fig.update_layout(template="plotly_dark", height=450, margin=dict(l=20, r=20, t=30, b=20), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    fig.update_layout(template="plotly_dark", height=450, margin=dict(l=20, r=20, t=30, b=20),
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     return fig
 
 # ----------------- BRANDING & HEADER -----------------
 st.title("⚡ Marshalls League Data Engine")
 st.markdown("##### **Created by Jordan Jones** | *Official WIN Reality SmartPark Analytics & Scouting Suite*")
 
-with st.spinner("Connecting to Marshalls Cloud Lake..."):
+with st.spinner("Streaming Marshalls League telemetry..."):
     data = load_marshalls_telemetry(MANIFEST_SHEET_ID)
 
 if data.empty:
     st.warning("Telemetry is loading. Please check permissions on the Google Sheet.")
     st.stop()
 
-# ----------------- SIDEBAR FILTERS -----------------
-st.sidebar.header("🎯 Game & Player Controls")
+# ----------------- SIDEBAR CONTROLS -----------------
+st.sidebar.header("🎯 Navigation & Controls")
 
-report_scope = st.sidebar.radio("View Report Level", [
+report_scope = st.sidebar.radio("Navigation View", [
+    "🏆 League Leaderboard Hub",
     "🔥 Individual Hitter Card",
     "🛡️ Individual Pitcher Card",
-    "🏆 Team Game Summary"
+    "📊 Team Game Summary"
 ])
 
 available_years = sorted(data['Season_Year'].dropna().unique())
 selected_year = st.sidebar.selectbox("Season Year", options=available_years, index=0)
 season_data = data[data['Season_Year'] == selected_year]
 
-games = ["All Games (Season Cumulative)"] + sorted([g for g in season_data['Game_Source'].dropna().unique()])
-selected_game = st.sidebar.selectbox("Game Select", options=games)
+# =====================================================================
+# VIEW 1: LEAGUE LEADERBOARD HUB (DEFAULT HOME VIEW)
+# =====================================================================
+if report_scope == "🏆 League Leaderboard Hub":
+    st.subheader(f"🏆 Marshalls League Official Leaderboard ({selected_year})")
+    st.caption("Top 10 rankings across essential pro-scouting metrics (Minimum qualifying thresholds applied)")
 
-if selected_game != "All Games (Season Cumulative)":
-    active_data = season_data[season_data['Game_Source'] == selected_game]
-else:
-    active_data = season_data
+    lb_tab_hit, lb_tab_pitch = st.tabs(["💥 Hitting Leaderboards", "🎯 Pitching Leaderboards"])
 
-st.divider()
+    # --- HITTING LEADERBOARDS ---
+    with lb_tab_hit:
+        batted_all = season_data[season_data['ExitSpeed'].notna() & (season_data['ExitSpeed'] >= 40) & (season_data['Batter'].notna())]
+        
+        # Aggregate hitter metrics
+        hitter_agg = batted_all.groupby('Batter').agg(
+            BIP=('ExitSpeed', 'count'),
+            Max_EV=('ExitSpeed', 'max'),
+            Avg_EV=('ExitSpeed', 'mean'),
+            Hard_Hits=('ExitSpeed', lambda x: (x >= 90.0).sum()),
+            Sweet_Spot_Hits=('Angle', lambda x: ((x >= 8.0) & (x <= 32.0)).sum()),
+            Max_Dist=('Distance', 'max')
+        ).reset_index()
+
+        hitter_agg['Hard_Hit_%'] = ((hitter_agg['Hard_Hits'] / hitter_agg['BIP']) * 100).round(1)
+        hitter_agg['Sweet_Spot_%'] = ((hitter_agg['Sweet_Spot_Hits'] / hitter_agg['BIP']) * 100).round(1)
+        hitter_agg['Avg_EV'] = hitter_agg['Avg_EV'].round(1)
+        hitter_agg['Max_EV'] = hitter_agg['Max_EV'].round(1)
+
+        c_h1, c_h2 = st.columns(2)
+
+        with c_h1:
+            st.markdown("#### 🚀 **Top 10 Max Exit Velocity (Raw Power)**")
+            top_max_ev = hitter_agg.sort_values(by='Max_EV', ascending=False).head(10)[['Batter', 'Max_EV', 'Avg_EV', 'BIP']]
+            top_max_ev.columns = ['Hitter', 'Max EV (mph)', 'Avg EV (mph)', 'Batted Balls']
+            top_max_ev.index = range(1, len(top_max_ev) + 1)
+            st.dataframe(top_max_ev, use_container_width=True)
+
+            st.markdown("#### 🎯 **Top 10 Hard-Hit % (90+ mph, min 5 BIP)**")
+            top_hh = hitter_agg[hitter_agg['BIP'] >= 5].sort_values(by='Hard_Hit_%', ascending=False).head(10)[['Batter', 'Hard_Hit_%', 'Hard_Hits', 'BIP']]
+            top_hh.columns = ['Hitter', 'Hard-Hit %', 'Hard Hits (90+)', 'Batted Balls']
+            top_hh.index = range(1, len(top_hh) + 1)
+            st.dataframe(top_hh, use_container_width=True)
+
+        with c_h2:
+            st.markdown("#### ⚡ **Top 10 Average Exit Velocity (min 5 BIP)**")
+            top_avg_ev = hitter_agg[hitter_agg['BIP'] >= 5].sort_values(by='Avg_EV', ascending=False).head(10)[['Batter', 'Avg_EV', 'Max_EV', 'BIP']]
+            top_avg_ev.columns = ['Hitter', 'Avg EV (mph)', 'Max EV (mph)', 'Batted Balls']
+            top_avg_ev.index = range(1, len(top_avg_ev) + 1)
+            st.dataframe(top_avg_ev, use_container_width=True)
+
+            st.markdown("#### 📐 **Top 10 Sweet-Spot % (8°-32° LA, min 5 BIP)**")
+            top_sw = hitter_agg[hitter_agg['BIP'] >= 5].sort_values(by='Sweet_Spot_%', ascending=False).head(10)[['Batter', 'Sweet_Spot_%', 'BIP', 'Max_EV']]
+            top_sw.columns = ['Hitter', 'Sweet-Spot %', 'Batted Balls', 'Max EV (mph)']
+            top_sw.index = range(1, len(top_sw) + 1)
+            st.dataframe(top_sw, use_container_width=True)
+
+    # --- PITCHING LEADERBOARDS ---
+    with lb_tab_pitch:
+        pitchers_all = season_data[season_data['Pitcher'].notna() & (season_data['Pitcher'] != '')]
+        fb_all = pitchers_all[pitchers_all['TaggedPitchType'] == 'Fastball']
+
+        # Aggregate Pitcher Velocity & IVB
+        p_fb_agg = fb_all.groupby('Pitcher').agg(
+            FB_Pitches=('RelSpeed', 'count'),
+            Max_FB=('RelSpeed', 'max'),
+            Avg_FB=('RelSpeed', 'mean'),
+            Avg_IVB=('InducedVertBreak', 'mean'),
+            Avg_Spin=('SpinRate', 'mean')
+        ).reset_index()
+
+        p_fb_agg['Max_FB'] = p_fb_agg['Max_FB'].round(1)
+        p_fb_agg['Avg_FB'] = p_fb_agg['Avg_FB'].round(1)
+        p_fb_agg['Avg_IVB'] = p_fb_agg['Avg_IVB'].round(1)
+        p_fb_agg['Avg_Spin'] = p_fb_agg['Avg_Spin'].round(0)
+
+        # Strike Throwing Control
+        p_control_agg = pitchers_all.groupby('Pitcher').agg(
+            Total_Pitches=('PitchCall', 'count'),
+            Strikes=('PitchCall', lambda x: x.astype(str).str.contains("Strike|Foul|InPlay", case=False, na=False).sum()),
+            FP_Total=('PitchofPA', lambda x: (x == 1).sum()),
+            FP_Strikes=('PitchCall', lambda x: ((pitchers_all.loc[x.index, 'PitchofPA'] == 1) & (x.astype(str).str.contains("Strike|Foul|InPlay", case=False, na=False))).sum())
+        ).reset_index()
+
+        p_control_agg['Strike_%'] = ((p_control_agg['Strikes'] / p_control_agg['Total_Pitches']) * 100).round(1)
+        p_control_agg['FP_Strike_%'] = ((p_control_agg['FP_Strikes'] / p_control_agg['FP_Total'].replace(0, 1)) * 100).round(1)
+
+        c_p1, c_p2 = st.columns(2)
+
+        with c_p1:
+            st.markdown("#### 🔥 **Top 10 Peak Fastball Velocity**")
+            top_fb = p_fb_agg.sort_values(by='Max_FB', ascending=False).head(10)[['Pitcher', 'Max_FB', 'Avg_FB', 'FB_Pitches']]
+            top_fb.columns = ['Pitcher', 'Max FB (mph)', 'Avg FB (mph)', 'Pitches']
+            top_fb.index = range(1, len(top_fb) + 1)
+            st.dataframe(top_fb, use_container_width=True)
+
+            st.markdown("#### 🎯 **Top 10 Strike Throwing % (min 30 Pitches)**")
+            top_strikes = p_control_agg[p_control_agg['Total_Pitches'] >= 30].sort_values(by='Strike_%', ascending=False).head(10)[['Pitcher', 'Strike_%', 'Total_Pitches']]
+            top_strikes.columns = ['Pitcher', 'Strike %', 'Total Pitches']
+            top_strikes.index = range(1, len(top_strikes) + 1)
+            st.dataframe(top_strikes, use_container_width=True)
+
+        with c_p2:
+            st.markdown("#### 🌪️ **Top 10 Fastball Ride / IVB (min 15 Fastballs)**")
+            top_ivb = p_fb_agg[p_fb_agg['FB_Pitches'] >= 15].sort_values(by='Avg_IVB', ascending=False).head(10)[['Pitcher', 'Avg_IVB', 'Avg_FB', 'Avg_Spin']]
+            top_ivb.columns = ['Pitcher', 'Avg IVB (in)', 'Avg FB (mph)', 'Avg Spin (rpm)']
+            top_ivb.index = range(1, len(top_ivb) + 1)
+            st.dataframe(top_ivb, use_container_width=True)
+
+            st.markdown("#### 🥊 **Top 10 First-Pitch Strike % (min 10 PAs)**")
+            top_fps = p_control_agg[p_control_agg['FP_Total'] >= 10].sort_values(by='FP_Strike_%', ascending=False).head(10)[['Pitcher', 'FP_Strike_%', 'FP_Total']]
+            top_fps.columns = ['Pitcher', 'FP Strike %', 'Batters Faced']
+            top_fps.index = range(1, len(top_fps) + 1)
+            st.dataframe(top_fps, use_container_width=True)
 
 # =====================================================================
-# 1. INDIVIDUAL HITTER REPORT CARD
+# VIEW 2: INDIVIDUAL HITTER REPORT CARD
 # =====================================================================
-if report_scope == "🔥 Individual Hitter Card":
+elif report_scope == "🔥 Individual Hitter Card":
+    games = ["All Games (Season Cumulative)"] + sorted([g for g in season_data['Game_Source'].dropna().unique()])
+    selected_game = st.sidebar.selectbox("Game Select", options=games)
+    active_data = season_data[season_data['Game_Source'] == selected_game] if selected_game != "All Games (Season Cumulative)" else season_data
+
     batters = sorted([b for b in active_data['Batter'].dropna().unique() if str(b).strip()])
     if not batters:
         st.warning("No hitter data tracked for this selection.")
@@ -191,7 +289,6 @@ if report_scope == "🔥 Individual Hitter Card":
     st.subheader(f"Hitter Postgame Report: **{selected_batter}**")
     st.caption(f"Game: {selected_game} | Season: {selected_year}")
 
-    # AI TAKEAWAYS
     t1, t2 = st.columns(2)
     with t1:
         if max_ev >= 95:
@@ -209,7 +306,6 @@ if report_scope == "🔥 Individual Hitter Card":
         else:
             st.info("**Aggression on strikes:** Attack early count fastballs in the strike zone.")
 
-    # TOP METRICS
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Hard-Hit Rate (90+)", f"{len(hard_hits)}/{len(in_play)}" if len(in_play) > 0 else "0/0")
     k2.metric("Average Exit Velo", f"{avg_ev:.1f} mph" if avg_ev > 0 else "N/A")
@@ -219,26 +315,17 @@ if report_scope == "🔥 Individual Hitter Card":
 
     st.divider()
 
-    # ROW 1: PRO STRIKE ZONE + AT-BAT SEQUENCING TIMELINE
     col_zone, col_seq = st.columns([1.1, 1.3])
-
     with col_zone:
         st.markdown("#### **Pitches Seen (Catcher's View)**")
         if 'PlateLocSide' in b_data.columns and 'PlateLocHeight' in b_data.columns:
             st.plotly_chart(render_strike_zone_figure(b_data), use_container_width=True)
-        else:
-            st.info("Plate location coordinates are unavailable.")
 
     with col_seq:
         st.markdown("#### **At-Bat Pitch Sequencing Timeline**")
         st.caption("Chronological progression of every pitch seen in each plate appearance:")
-        
-        # Build chronological pitch sequence
         sort_cols = [c for c in ['Inning', 'PAofInning', 'PitchofPA', 'Time'] if c in b_data.columns]
-        if sort_cols:
-            b_sorted = b_data.sort_values(by=sort_cols).copy()
-        else:
-            b_sorted = b_data.copy()
+        b_sorted = b_data.sort_values(by=sort_cols).copy() if sort_cols else b_data.copy()
 
         timeline_data = []
         for idx, r in b_sorted.iterrows():
@@ -248,69 +335,48 @@ if report_scope == "🔥 Individual Hitter Card":
             ptype = r.get('TaggedPitchType', 'Unknown')
             velo = f"{r.get('RelSpeed', 0):.1f} mph" if pd.notna(r.get('RelSpeed')) else "-"
             call = r.get('PitchCall', '-')
-            
-            # Format EV / LA if ball in play
             ev = r.get('ExitSpeed', None)
             la = r.get('Angle', None)
             res = r.get('PlayResult', None)
             
-            if pd.notna(ev) and ev >= 40:
-                outcome = f"💥 In Play: {ev:.1f} mph, {la:.0f}° ({res if pd.notna(res) else 'Contact'})"
-            else:
-                outcome = call
+            outcome = f"💥 In Play: {ev:.1f} mph, {la:.0f}° ({res if pd.notna(res) else 'Contact'})" if (pd.notna(ev) and ev >= 40) else call
 
             timeline_data.append({
-                "Inn": inn,
-                "Pitch #": p_num,
-                "Count": count_str,
-                "Pitch Type": ptype,
-                "Velo": velo,
-                "Pitch Call / Outcome": outcome
+                "Inn": inn, "Pitch #": p_num, "Count": count_str,
+                "Pitch Type": ptype, "Velo": velo, "Pitch Call / Outcome": outcome
             })
             
         if timeline_data:
             st.dataframe(pd.DataFrame(timeline_data), use_container_width=True, hide_index=True)
-        else:
-            st.info("No pitch sequence data available.")
 
     st.divider()
 
-    # ROW 2: COUNT SEQUENCING BREAKDOWN TABLE
     st.markdown("#### **Count Sequencing — What Did The Opposition Throw You?**")
-    st.caption("Breakdown of pitch types thrown to this batter based on game situation:")
-
     def get_count_bucket(r):
         b = int(r.get('Balls', 0))
         s = int(r.get('Strikes', 0))
-        if b == 0 and s == 0:
-            return "1st Pitch (0-0)"
-        elif s == 2:
-            return "2 Strikes (0-2, 1-2, 2-2, 3-2)"
-        elif b > s:
-            return "Hitter's Count (Ahead: 1-0, 2-0, 2-1, 3-0, 3-1)"
-        elif s > b:
-            return "Pitcher's Count (Behind: 0-1)"
-        elif b == s and b > 0:
-            return "Even Count (1-1)"
+        if b == 0 and s == 0: return "1st Pitch (0-0)"
+        elif s == 2: return "2 Strikes (0-2, 1-2, 2-2, 3-2)"
+        elif b > s: return "Hitter's Count (Ahead: 1-0, 2-0, 2-1, 3-0, 3-1)"
+        elif s > b: return "Pitcher's Count (Behind: 0-1)"
+        elif b == s and b > 0: return "Even Count (1-1)"
         return "Other"
 
     b_data['CountState'] = b_data.apply(get_count_bucket, axis=1)
-    
     order = ["1st Pitch (0-0)", "Hitter's Count (Ahead: 1-0, 2-0, 2-1, 3-0, 3-1)", "Pitcher's Count (Behind: 0-1)", "Even Count (1-1)", "2 Strikes (0-2, 1-2, 2-2, 3-2)"]
-    
     seq_matrix = pd.crosstab(b_data['CountState'], b_data['TaggedPitchType'], normalize='index').multiply(100).round(0)
-    count_totals = b_data['CountState'].value_counts()
-    seq_matrix['Total Pitches'] = count_totals
-    
-    # Reindex to logical baseball order
+    seq_matrix['Total Pitches'] = b_data['CountState'].value_counts()
     present_order = [o for o in order if o in seq_matrix.index]
-    seq_matrix = seq_matrix.reindex(present_order)
-    st.dataframe(seq_matrix.fillna(0).astype(int), use_container_width=True)
+    st.dataframe(seq_matrix.reindex(present_order).fillna(0).astype(int), use_container_width=True)
 
 # =====================================================================
-# 2. INDIVIDUAL PITCHER REPORT CARD
+# VIEW 3: INDIVIDUAL PITCHER REPORT CARD
 # =====================================================================
 elif report_scope == "🛡️ Individual Pitcher Card":
+    games = ["All Games (Season Cumulative)"] + sorted([g for g in season_data['Game_Source'].dropna().unique()])
+    selected_game = st.sidebar.selectbox("Game Select", options=games)
+    active_data = season_data[season_data['Game_Source'] == selected_game] if selected_game != "All Games (Season Cumulative)" else season_data
+
     pitchers = sorted([p for p in active_data['Pitcher'].dropna().unique() if str(p).strip()])
     if not pitchers:
         st.warning("No pitcher data tracked for this selection.")
@@ -356,18 +422,13 @@ elif report_scope == "🛡️ Individual Pitcher Card":
     st.divider()
 
     p_col1, p_col2 = st.columns([1.1, 1.3])
-
     with p_col1:
         st.markdown("#### **Pitch Movement (Pitcher's View)**")
         fig_mov = px.scatter(
-            p_data,
-            x="HorzBreak",
-            y="InducedVertBreak",
-            color="TaggedPitchType",
-            hover_data=["RelSpeed", "SpinRate"],
+            p_data, x="HorzBreak", y="InducedVertBreak",
+            color="TaggedPitchType", hover_data=["RelSpeed", "SpinRate"],
             labels={"HorzBreak": "Horizontal Break (HB) [in]", "InducedVertBreak": "Induced Vertical Break (IVB) [in]"},
-            template="plotly_dark",
-            height=400
+            template="plotly_dark", height=400
         )
         fig_mov.update_xaxes(range=[-25, 25])
         fig_mov.update_yaxes(range=[-25, 25])
@@ -379,8 +440,6 @@ elif report_scope == "🛡️ Individual Pitcher Card":
         st.markdown("#### **Location & Damage Allowed (Catcher's View)**")
         if 'PlateLocSide' in p_data.columns and 'PlateLocHeight' in p_data.columns:
             st.plotly_chart(render_strike_zone_figure(p_data), use_container_width=True)
-        else:
-            st.info("Plate location coordinates are unavailable.")
 
     st.divider()
 
@@ -399,9 +458,13 @@ elif report_scope == "🛡️ Individual Pitcher Card":
     st.dataframe(seq.astype(int), use_container_width=True)
 
 # =====================================================================
-# 3. TEAM GAME SUMMARY
+# VIEW 4: TEAM GAME SUMMARY
 # =====================================================================
 else:
+    games = ["All Games (Season Cumulative)"] + sorted([g for g in season_data['Game_Source'].dropna().unique()])
+    selected_game = st.sidebar.selectbox("Game Select", options=games)
+    active_data = season_data[season_data['Game_Source'] == selected_game] if selected_game != "All Games (Season Cumulative)" else season_data
+
     st.subheader(f"Team Postgame Benchmark Report")
     st.caption(f"Game: {selected_game} | Season: {selected_year}")
 
@@ -417,7 +480,6 @@ else:
     with t1:
         st.write(f"**Hard-Hit Rate (90+ MPH): {hh_rate:.0f}%** *(Target: 40%+)*")
         st.progress(min(int(hh_rate) / 100, 1.0))
-        
         st.write(f"**Launch Angle Sweet-Spot % (8°-32°): {sw_rate:.0f}%** *(Target: 35%+)*")
         st.progress(min(int(sw_rate) / 100, 1.0))
 
@@ -425,10 +487,8 @@ else:
         gb_count = len(batted_team[batted_team['Angle'] < 8])
         ld_count = len(batted_team[(batted_team['Angle'] >= 8) & (batted_team['Angle'] <= 32)])
         total_bip = len(batted_team)
-        
         st.write(f"**Line-Drive %: {(ld_count/total_bip*100):.0f}%** *(Target: 25%+)*" if total_bip > 0 else "Line Drive %: N/A")
         st.progress(min((ld_count/total_bip) if total_bip > 0 else 0, 1.0))
-        
         st.write(f"**Ground-Ball %: {(gb_count/total_bip*100):.0f}%** *(Target: Keep under 40%)*" if total_bip > 0 else "Ground Ball %: N/A")
         st.progress(min((gb_count/total_bip) if total_bip > 0 else 0, 1.0))
 
