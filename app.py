@@ -72,8 +72,6 @@ st.markdown("""
 
 MANIFEST_SHEET_ID = "1Xc3lx4ybIfp9R14ROhCWOD1RpnKIhbNYU76dYQUZdow"
 
-if "top_nav_radio" not in st.session_state:
-    st.session_state["top_nav_radio"] = "🏆 Leaderboard Hub"
 if "nav_view" not in st.session_state:
     st.session_state["nav_view"] = "🏆 Leaderboard Hub"
 if "selected_player" not in st.session_state:
@@ -340,6 +338,7 @@ def render_field_spray_chart(batted_df):
     fig.update_layout(height=380, margin=dict(l=10, r=10, t=25, b=10), plot_bgcolor="rgba(245, 247, 250, 0.6)")
     return fig
 
+# Safe navigation routing using state only
 def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, submetric_label, submetric_col, player_type, key_prefix):
     target_view = "🔥 Hitter Cards" if player_type == "Hitter" else "🛡️ Pitcher Cards"
     for idx, r in df_ranked.iterrows():
@@ -349,7 +348,6 @@ def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, 
         card_label = f"#{idx+1}   {p_name}   —   {m_val} {metric_label}  ({sub_val} {submetric_label})"
         if st.button(card_label, key=f"{key_prefix}_{idx}_{p_name}", use_container_width=True):
             st.session_state["selected_player"] = p_name
-            st.session_state["top_nav_radio"] = target_view
             st.session_state["nav_view"] = target_view
             st.rerun()
 
@@ -374,12 +372,10 @@ available_years = sorted(data['Season_Year'].dropna().unique())
 selected_year = nav_cols[1].selectbox("Season Year", options=available_years, index=0)
 season_raw = data[data['Season_Year'] == selected_year]
 
-# Build autocomplete list combining Hitters and Pitchers cleanly
 all_b_list = [f"Hitter: {b}" for b in sorted(season_raw['Batter'].dropna().unique()) if str(b).strip()]
 all_p_list = [f"Pitcher: {p}" for p in sorted(season_raw['Pitcher'].dropna().unique()) if str(p).strip()]
 combined_search_options = sorted(list(set(all_b_list + all_p_list)))
 
-# Native Streamlit Selectbox with typeahead autocomplete enabled
 search_selection = nav_cols[3].selectbox(
     "Quick Search",
     options=combined_search_options,
@@ -392,26 +388,28 @@ search_selection = nav_cols[3].selectbox(
 if search_selection:
     if search_selection.startswith("Hitter: "):
         st.session_state["selected_player"] = search_selection.replace("Hitter: ", "")
-        st.session_state["top_nav_radio"] = "🔥 Hitter Cards"
         st.session_state["nav_view"] = "🔥 Hitter Cards"
         st.rerun()
     elif search_selection.startswith("Pitcher: "):
         st.session_state["selected_player"] = search_selection.replace("Pitcher: ", "")
-        st.session_state["top_nav_radio"] = "🛡️ Pitcher Cards"
         st.session_state["nav_view"] = "🛡️ Pitcher Cards"
         st.rerun()
 
 # ----------------- TOP NAVIGATION & DATE FILTER HUB -----------------
 view_options = ["🏆 Leaderboard Hub", "🔥 Hitter Cards", "🛡️ Pitcher Cards", "📊 Team Game Summary"]
 
+current_idx = view_options.index(st.session_state["nav_view"]) if st.session_state["nav_view"] in view_options else 0
+
 selected_nav = nav_cols[0].radio(
     "Navigation Mode",
     options=view_options,
-    key="top_nav_radio",
+    index=current_idx,
     horizontal=False,
-    label_visibility="collapsed"
+    label_visibility="collapsed",
+    key="top_nav_radio"
 )
-st.session_state["nav_view"] = selected_nav
+if selected_nav != st.session_state["nav_view"]:
+    st.session_state["nav_view"] = selected_nav
 
 all_dates = sorted(season_raw['ParsedDate'].dropna().unique())
 min_d = all_dates[0] if all_dates else date(2026, 6, 1)
