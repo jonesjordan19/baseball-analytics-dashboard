@@ -72,18 +72,144 @@ def load_marshalls_telemetry(sheet_id):
         return combined
     return pd.DataFrame()
 
-def render_strike_zone_figure(df_pitches):
-    """Draws a bold, high-contrast catcher's view strike zone visible on both dark and light modes."""
-    fig = go.Figure()
+# =====================================================================
+# PITCH CLASSIFICATION & SEQUENCING ENGINE
+# =====================================================================
+PITCH_FAMILY_MAP = {
+    'Fastball': 'Fastballs',
+    'FourSeamFastball': 'Fastballs',
+    'TwoSeamFastball': 'Fastballs',
+    'Sinker': 'Fastballs',
+    'Cutter': 'Fastballs',
+    'Slider': 'Breaking',
+    'Curveball': 'Breaking',
+    'Sweeper': 'Breaking',
+    'Slurve': 'Breaking',
+    'KnuckleCurve': 'Breaking',
+    'Changeup': 'Offspeed',
+    'Splitter': 'Offspeed',
+    'Forkball': 'Offspeed'
+}
 
-    # 1. Shaded strike zone background box
+PITCH_FAMILY_COLORS = {
+    'Fastballs': '#EF4444',  # Red
+    'Breaking': '#06B6D4',   # Cyan
+    'Offspeed': '#10B981',   # Green
+    'UD': '#6B7280'          # Gray (Undefined)
+}
+
+def enrich_pitch_sequencing_data(df_input):
+    """Computes previous pitch type and previous pitch outcome within plate appearances."""
+    if df_input.empty:
+        return df_input
+
+    df_seq = df_input.copy()
+    sort_cols = [c for c in ['Game_Source', 'Inning', 'PAofInning', 'PitchofPA'] if c in df_seq.columns]
+    if sort_cols:
+        df_seq = df_seq.sort_values(by=sort_cols).reset_index(drop=True)
+
+    # Classify pitch families
+    df_seq['PitchFamily'] = df_seq['TaggedPitchType'].map(PITCH_FAMILY_MAP).fillna('UD')
+
+    # Group by Game and PA to determine relative pitch sequencing
+    pa_group_cols = [c for c in ['Game_Source', 'Inning', 'PAofInning'] if c in df_seq.columns]
+    if not pa_group_cols:
+        pa_group_cols = ['Game_Source']
+
+    # Previous pitch family in the PA
+    df_seq['PrevPitchFamily'] = df_seq.groupby(pa_group_cols)['PitchFamily'].shift(1)
+    df_seq['PrevPitchCall'] = df_seq.groupby(pa_group_cols)['PitchCall'].shift(1)
+    
+    # 1. Pitch Sequencing Categories
+    def get_pitch_seq_cat(row):
+        p_num = row.get('PitchofPA', 1)
+        if p_num == 1 or pd.isna(row.get('PrevPitchFamily')):
+            return '1P'
+        prev = row['PrevPitchFamily']
+        if prev == 'Fastballs': return 'AFB'
+        if prev == 'Breaking': return 'ABR'
+        if prev == 'Offspeed': return 'AOFF'
+        return 'AU'
+
+    # 2. Count Sequencing Categories
+    def get_count_seq_cat(row):
+        b = int(row.get('Balls', 0))
+        s = int(row.get('Strikes', 0))
+        if b == 0 and s == 0: return '1P'
+        if b == 3 and s == 2: return 'Full'
+        if s > b: return 'Ahead'
+        if b > s: return 'Behind'
+        if b == s: return 'Even'
+        return 'Other'
+
+    # 3. Result Sequencing Categories (based on outcome of previous pitch)
+    def get_result_seq_cat(row):
+        p_num = row.get('PitchofPA', 1)
+        if p_num == 1 or pd.isna(row.get('PrevPitchCall')):
+            return None
+        call = str(row['PrevPitchCall']).lower()
+        if 'ball' in call or 'hitby' in call:
+            return 'AB'   # After Ball
+        elif 'strikecalled' in call:
+            return 'ACS'  # After Called Strike
+        elif 'swinging' in call:
+            return 'AW'   # After Whiff
+        elif 'foul' in call:
+            return 'AF'   # After Foul
+        return None
+
+    df_seq['PitchSeqBucket'] = df_seq.apply(get_pitch_seq_cat, axis=1)
+    df_seq['CountSeqBucket'] = df_seq.apply(get_count_seq_cat, axis=1)
+    df_seq['ResultSeqBucket'] = df_seq.apply(get_result_seq_cat, axis=1)
+
+    return df_seq
+
+def render_100pct_stacked_bar(df_data, category_col, fixed_order, title):
+    """Draws an exact 100% horizontal stacked bar chart matching the WIN Reality panel."""
+    if df_data.empty or category_col not in df_data.columns:
+        return go.Figure()
+
+    ctab = pd.crosstab(df_data[category_col], df_data['PitchFamily'], normalize='index').multiply(100)
+    for col in ['Fastballs', 'Breaking', 'Offspeed', 'UD']:
+        if col not in ctab.columns:
+            ctab[col] = 0.0
+
+    # Retain fixed chronological baseball ordering (bottom-to-top display reversed for standard Y-axis)
+    valid_order = [cat for cat in fixed_order if cat in ctab.index]
+    ctab = ctab.reindex(valid_order).fillna(0.0)
+
+    fig = go.Figure()
+    for family in ['Fastballs', 'Breaking', 'Offspeed', 'UD']:
+        fig.add_trace(go.Bar(
+            y=ctab.index,
+            x=ctab[family],
+            name=family,
+            orientation='h',
+            marker=dict(color=PITCH_FAMILY_COLORS[family]),
+            hoverinfo='text',
+            hovertext=[f"{y} | {family}: {val:.1f}%" for y, val in zip(ctab.index, ctab[family])]
+        ))
+
+    fig.update_layout(
+        title=dict(text=f"<b>{title}</b>", font=dict(size=15, color="#111827")),
+        barmode='stack',
+        height=320,
+        margin=dict(l=10, r=15, t=40, b=30),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=10)),
+        xaxis=dict(range=[0, 100], ticksuffix="%", dtick=25, gridcolor="rgba(0,0,0,0.08)", zeroline=False),
+        yaxis=dict(autorange="reversed", tickfont=dict(size=12, color="#111827", family="Arial Black")),
+        plot_bgcolor="#FFFFFF",
+        paper_bgcolor="#FFFFFF"
+    )
+    return fig
+
+def render_strike_zone_figure(df_pitches):
+    fig = go.Figure()
     fig.add_shape(
         type="rect", x0=-0.83, y0=1.5, x1=0.83, y1=3.5,
         fillcolor="rgba(0, 150, 255, 0.08)",
         line=dict(color="#111827", width=3)
     )
-
-    # 2. Inner 9-quadrant dotted grid
     x_third = 1.66 / 3.0
     y_third = 2.0 / 3.0
     fig.add_shape(type="line", x0=-0.83 + x_third, y0=1.5, x1=-0.83 + x_third, y1=3.5,
@@ -95,7 +221,6 @@ def render_strike_zone_figure(df_pitches):
     fig.add_shape(type="line", x0=-0.83, y0=3.5 - y_third, x1=0.83, y1=3.5 - y_third,
                   line=dict(color="rgba(50,50,50,0.4)", width=1.5, dash="dot"))
 
-    # 3. Home Plate Pentagon (solid gray with black border)
     fig.add_trace(go.Scatter(
         x=[-0.708, 0.708, 0.708, 0.0, -0.708, -0.708],
         y=[0.6, 0.6, 0.45, 0.25, 0.45, 0.6],
@@ -104,43 +229,34 @@ def render_strike_zone_figure(df_pitches):
         mode="lines", showlegend=False, hoverinfo="skip"
     ))
 
-    # 4. Pitches (non-contact)
     non_contact = df_pitches[df_pitches['ExitSpeed'].isna() | (df_pitches['ExitSpeed'] < 40)]
     for ptype, group in non_contact.groupby('TaggedPitchType'):
         hover_info = group.apply(lambda r: f"{ptype} | {r.get('RelSpeed', 0):.1f} mph<br>Count: {r.get('Balls', 0)}-{r.get('Strikes', 0)}<br>Call: {r.get('PitchCall', '')}", axis=1)
         fig.add_trace(go.Scatter(
             x=group['PlateLocSide'], y=group['PlateLocHeight'],
             mode='markers', name=ptype,
-            hovertext=hover_info,
-            hoverinfo="text",
-            marker=dict(size=11, opacity=0.85)
+            hovertext=hover_info, hoverinfo="text",
+            marker=dict(size=10, opacity=0.85)
         ))
 
-    # 5. In-play / Contact Pitches (Bold Gold Rings matching WIN Reality)
     contact_p = df_pitches[df_pitches['ExitSpeed'].notna() & (df_pitches['ExitSpeed'] >= 40)]
     if not contact_p.empty:
         hover_contact = contact_p.apply(lambda r: f"CONTACT: {r.get('TaggedPitchType', '')} | {r.get('RelSpeed', 0):.1f} mph<br>EV: {r.get('ExitSpeed', 0):.1f} mph | LA: {r.get('Angle', 0):.0f}°<br>Result: {r.get('PlayResult', '')}", axis=1)
         fig.add_trace(go.Scatter(
             x=contact_p['PlateLocSide'], y=contact_p['PlateLocHeight'],
             mode='markers', name="In Play",
-            hovertext=hover_contact,
-            hoverinfo="text",
-            marker=dict(size=17, color='rgba(0,0,0,0)',
-                        line=dict(color='#EAB308', width=3.5))
+            hovertext=hover_contact, hoverinfo="text",
+            marker=dict(size=16, color='rgba(0,0,0,0)', line=dict(color='#EAB308', width=3.5))
         ))
 
     fig.update_xaxes(range=[-2.2, 2.2], title="Horizontal Plate Location (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
     fig.update_yaxes(range=[0.0, 4.5], title="Height from Ground (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
-    fig.update_layout(
-        height=430,
-        margin=dict(l=10, r=10, t=30, b=10),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        plot_bgcolor="rgba(245, 247, 250, 0.6)"
-    )
+    fig.update_layout(height=420, margin=dict(l=10, r=10, t=30, b=10),
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                      plot_bgcolor="rgba(245, 247, 250, 0.6)")
     return fig
 
 def render_field_spray_chart(batted_df):
-    """Draws field spray chart with foul poles and outfield wall."""
     fig = go.Figure()
     rad_lf = np.radians(135)
     rad_rf = np.radians(45)
@@ -160,8 +276,7 @@ def render_field_spray_chart(batted_df):
     b2_x, b2_y = 0, 127.28
     b3_x, b3_y = 90 * np.cos(np.radians(135)), 90 * np.sin(np.radians(135))
     fig.add_trace(go.Scatter(
-        x=[0, b1_x, b2_x, b3_x, 0],
-        y=[0, b1_y, b2_y, b3_y, 0],
+        x=[0, b1_x, b2_x, b3_x, 0], y=[0, b1_y, b2_y, b3_y, 0],
         mode='lines', line=dict(color="rgba(120,120,120,0.5)", width=1.5, dash="dash"),
         showlegend=False, hoverinfo='skip'
     ))
@@ -177,32 +292,21 @@ def render_field_spray_chart(batted_df):
                 lambda r: f"EV: {r.get('ExitSpeed', 0):.1f} mph<br>Dist: {r.get('Distance', 0):.0f} ft<br>LA: {r.get('Angle', 0):.0f}°<br>Pitch: {r.get('TaggedPitchType', '')}<br>Result: {r.get('PlayResult', '')}",
                 axis=1
             )
-
             fig.add_trace(go.Scatter(
-                x=valid_bip['Field_X'],
-                y=valid_bip['Field_Y'],
+                x=valid_bip['Field_X'], y=valid_bip['Field_Y'],
                 mode='markers',
                 marker=dict(
-                    size=12,
-                    color=valid_bip['ExitSpeed'],
-                    colorscale='Turbo',
-                    cmin=70,
-                    cmax=105,
+                    size=12, color=valid_bip['ExitSpeed'],
+                    colorscale='Turbo', cmin=70, cmax=105,
                     colorbar=dict(title="EV (mph)", x=1.02, thickness=12),
                     line=dict(color='black', width=1)
                 ),
-                text=hover_text,
-                hoverinfo="text",
-                name="Batted Ball"
+                text=hover_text, hoverinfo="text", name="Batted Ball"
             ))
 
     fig.update_xaxes(range=[-260, 260], showgrid=False, zeroline=False, visible=False)
     fig.update_yaxes(range=[-20, 430], showgrid=False, zeroline=False, visible=False)
-    fig.update_layout(
-        height=430,
-        margin=dict(l=10, r=10, t=30, b=10),
-        plot_bgcolor="rgba(245, 247, 250, 0.6)"
-    )
+    fig.update_layout(height=420, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="rgba(245, 247, 250, 0.6)")
     return fig
 
 def select_player_callback(player_name, target_view):
@@ -218,7 +322,6 @@ def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, 
         
         c_rank, c_btn, c_stat = st.columns([0.6, 3.2, 2.2])
         c_rank.markdown(f"**#{idx+1}**")
-        
         c_btn.button(
             f"{p_name}",
             key=f"{key_prefix}_{idx}_{p_name}",
@@ -226,7 +329,6 @@ def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, 
             args=(p_name, target_view),
             use_container_width=True
         )
-            
         c_stat.markdown(f"**{m_val}** {metric_label} <span style='color:gray; font-size:12px;'>({sub_val} {submetric_label})</span>", unsafe_allow_html=True)
 
 # ----------------- BRANDING & HEADER -----------------
@@ -271,7 +373,6 @@ if report_scope == "🏆 League Leaderboard Hub":
 
     with lb_tab_hit:
         batted_all = season_data[season_data['ExitSpeed'].notna() & (season_data['ExitSpeed'] >= 40) & (season_data['Batter'].notna())]
-        
         hitter_agg = batted_all.groupby('Batter').agg(
             BIP=('ExitSpeed', 'count'),
             Max_EV=('ExitSpeed', 'max'),
@@ -287,7 +388,6 @@ if report_scope == "🏆 League Leaderboard Hub":
         hitter_agg['Max_EV'] = hitter_agg['Max_EV'].round(1)
 
         c_h1, c_h2 = st.columns(2)
-
         with c_h1:
             st.markdown("#### 🚀 **Top 10 Max Exit Velocity (Raw Power)**")
             top_max_ev = hitter_agg.sort_values(by='Max_EV', ascending=False).head(10).reset_index(drop=True)
@@ -336,7 +436,6 @@ if report_scope == "🏆 League Leaderboard Hub":
         p_control_agg['FP_Strike_%'] = ((p_control_agg['FP_Strikes'] / p_control_agg['FP_Total'].replace(0, 1)) * 100).round(1)
 
         c_p1, c_p2 = st.columns(2)
-
         with c_p1:
             st.markdown("#### 🔥 **Top 10 Peak Fastball Velocity**")
             top_fb = p_fb_agg.sort_values(by='Max_FB', ascending=False).head(10).reset_index(drop=True)
@@ -383,6 +482,9 @@ elif report_scope == "🔥 Individual Hitter Card":
     b_data = season_data[season_data['Batter'] == selected_batter].copy()
     if selected_game != "All Games (Season Cumulative)":
         b_data = b_data[b_data['Game_Source'] == selected_game]
+
+    # Enrich sequencing features
+    b_data = enrich_pitch_sequencing_data(b_data)
 
     total_pitches = len(b_data)
     swings = len(b_data[b_data['PitchCall'].astype(str).str.contains("StrikeSwinging|Foul|InPlay", case=False, na=False)])
@@ -438,12 +540,36 @@ elif report_scope == "🔥 Individual Hitter Card":
 
     st.divider()
 
-    # ----------------- AT-BAT LOG (CLEAN WIN REALITY SUMMARY) -----------------
-    st.markdown("#### **At-Bat Summary Log**")
-    st.caption("Plate appearance outcomes matching WIN Reality SmartPark scoring:")
+    # ----------------- THE 3-CHART PITCH SEQUENCING SUITE -----------------
+    st.markdown("### 📊 **Pitch Sequencing Intelligence**")
+    st.caption("How opposing pitching staffs attacked this hitter based on previous pitch, count state, and pitch result:")
 
+    seq_c1, seq_c2, seq_c3 = st.columns(3)
+
+    with seq_c1:
+        # Chart 1: Pitch Sequencing (1P, ABR, AFB, AU, AOFF)
+        order_pseq = ['1P', 'ABR', 'AFB', 'AU', 'AOFF']
+        fig_pseq = render_100pct_stacked_bar(b_data, 'PitchSeqBucket', order_pseq, "Pitch Sequencing")
+        st.plotly_chart(fig_pseq, use_container_width=True)
+
+    with seq_c2:
+        # Chart 2: Count Sequencing (1P, Ahead, Behind, Even, Full)
+        order_cseq = ['1P', 'Ahead', 'Behind', 'Even', 'Full']
+        fig_cseq = render_100pct_stacked_bar(b_data, 'CountSeqBucket', order_cseq, "Count Sequencing")
+        st.plotly_chart(fig_cseq, use_container_width=True)
+
+    with seq_c3:
+        # Chart 3: Result Sequencing (AB, ACS, AW, AF)
+        order_rseq = ['AB', 'ACS', 'AW', 'AF']
+        valid_res_data = b_data[b_data['ResultSeqBucket'].notna()]
+        fig_rseq = render_100pct_stacked_bar(valid_res_data, 'ResultSeqBucket', order_rseq, "Result Sequencing")
+        st.plotly_chart(fig_rseq, use_container_width=True)
+
+    st.divider()
+
+    # AT-BAT SUMMARY LOG
+    st.markdown("#### **At-Bat Summary Log**")
     if not in_play.empty:
-        # Build clean WIN Reality-style at-bat table
         def categorize_trajectory(row):
             la = row.get('Angle', 0)
             if la < 8: return "Ground Ball"
@@ -473,32 +599,6 @@ elif report_scope == "🔥 Individual Hitter Card":
             use_container_width=True,
             hide_index=True
         )
-    else:
-        st.info("No balls put into play for this selection.")
-
-    st.divider()
-
-    # ----------------- COUNT SEQUENCING BREAKDOWN -----------------
-    st.markdown("#### **Count Sequencing — Pitch Usage By Count**")
-    st.caption("How opposing pitching staffs attacked this hitter across counts:")
-
-    def get_count_bucket(r):
-        b = int(r.get('Balls', 0))
-        s = int(r.get('Strikes', 0))
-        if b == 0 and s == 0: return "1st Pitch"
-        elif s == 2: return "2 Strikes"
-        elif b > s: return "Ahead (Hitter's Count)"
-        elif s > b: return "Behind (Pitcher's Count)"
-        elif b == s and b > 0: return "Even"
-        return "Other"
-
-    b_data['CountState'] = b_data.apply(get_count_bucket, axis=1)
-    order = ["1st Pitch", "Ahead (Hitter's Count)", "Behind (Pitcher's Count)", "Even", "2 Strikes"]
-    
-    seq_matrix = pd.crosstab(b_data['CountState'], b_data['TaggedPitchType'], normalize='index').multiply(100).round(0)
-    seq_matrix['Total Pitches'] = b_data['CountState'].value_counts()
-    present_order = [o for o in order if o in seq_matrix.index]
-    st.dataframe(seq_matrix.reindex(present_order).fillna(0).astype(int), use_container_width=True)
 
 # =====================================================================
 # VIEW 3: INDIVIDUAL PITCHER REPORT CARD
@@ -526,6 +626,9 @@ elif report_scope == "🛡️ Individual Pitcher Card":
     p_data = season_data[season_data['Pitcher'] == selected_pitcher].copy()
     if selected_game != "All Games (Season Cumulative)":
         p_data = p_data[p_data['Game_Source'] == selected_game]
+
+    # Enrich sequencing features for pitcher
+    p_data = enrich_pitch_sequencing_data(p_data)
 
     total_p = len(p_data)
     strikes = len(p_data[p_data['PitchCall'].astype(str).str.contains("Strike|Foul|InPlay", case=False, na=False)])
@@ -586,19 +689,27 @@ elif report_scope == "🛡️ Individual Pitcher Card":
 
     st.divider()
 
-    st.markdown("#### **Pitcher Count Sequencing Usage**")
-    def categorize_pitcher_count(row):
-        b = int(row.get('Balls', 0))
-        s = int(row.get('Strikes', 0))
-        if b == 0 and s == 0: return '1st Pitch'
-        if s > b: return 'Ahead'
-        if b > s: return 'Behind'
-        if b == s and b > 0: return 'Even'
-        return 'Other'
-        
-    p_data['CountState'] = p_data.apply(categorize_pitcher_count, axis=1)
-    seq = pd.crosstab(p_data['CountState'], p_data['TaggedPitchType'], normalize='index').multiply(100).round(0)
-    st.dataframe(seq.astype(int), use_container_width=True)
+    # ----------------- THE 3-CHART PITCH SEQUENCING SUITE FOR PITCHER -----------------
+    st.markdown("### 📊 **Pitcher Arsenal Sequencing Tendencies**")
+    st.caption("Usage breakdown by previous pitch, count state, and previous pitch result:")
+
+    p_seq_c1, p_seq_c2, p_seq_c3 = st.columns(3)
+
+    with p_seq_c1:
+        order_pseq = ['1P', 'ABR', 'AFB', 'AU', 'AOFF']
+        fig_p_pseq = render_100pct_stacked_bar(p_data, 'PitchSeqBucket', order_pseq, "Pitch Sequencing")
+        st.plotly_chart(fig_p_pseq, use_container_width=True)
+
+    with p_seq_c2:
+        order_cseq = ['1P', 'Ahead', 'Behind', 'Even', 'Full']
+        fig_p_cseq = render_100pct_stacked_bar(p_data, 'CountSeqBucket', order_cseq, "Count Sequencing")
+        st.plotly_chart(fig_p_cseq, use_container_width=True)
+
+    with p_seq_c3:
+        order_rseq = ['AB', 'ACS', 'AW', 'AF']
+        p_valid_res = p_data[p_data['ResultSeqBucket'].notna()]
+        fig_p_rseq = render_100pct_stacked_bar(p_valid_res, 'ResultSeqBucket', order_rseq, "Result Sequencing")
+        st.plotly_chart(fig_p_rseq, use_container_width=True)
 
 # =====================================================================
 # VIEW 4: TEAM GAME SUMMARY
