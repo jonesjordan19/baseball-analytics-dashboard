@@ -266,7 +266,7 @@ def render_strike_zone_figure(df_pitches):
         ))
 
     fig.update_xaxes(range=[-2.2, 2.2], title="Horizontal Plate (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
-    fig.update_yaxes(range=[0.0, 4.5], title="Plate Height (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
+    fig.update_yaxes(range=[0.0, 4.5], title="Height from Ground (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
     fig.update_layout(height=380, margin=dict(l=10, r=10, t=25, b=10),
                       legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                       plot_bgcolor="rgba(245, 247, 250, 0.6)")
@@ -348,7 +348,7 @@ if data.empty:
     st.stop()
 
 # ----------------- TOP NAVIGATION & SEARCH HUB -----------------
-nav_cols = st.columns([1.2, 1.2, 1.2, 1.4])
+nav_cols = st.columns([1.2, 1.2, 1.6])
 view_options = ["🏆 Leaderboard Hub", "🔥 Hitter Cards", "🛡️ Pitcher Cards", "📊 Team Game Summary"]
 
 current_view_idx = view_options.index(st.session_state["nav_view"]) if st.session_state["nav_view"] in view_options else 0
@@ -367,12 +367,22 @@ available_years = sorted(data['Season_Year'].dropna().unique())
 selected_year = nav_cols[1].selectbox("Season Year", options=available_years, index=0)
 season_data = data[data['Season_Year'] == selected_year]
 
+# Clean, blank-by-default Player Search
 all_batters = sorted([b for b in season_data['Batter'].dropna().unique() if str(b).strip()])
 all_pitchers = sorted([p for p in season_data['Pitcher'].dropna().unique() if str(p).strip()])
-player_search_list = ["🔍 Search & Jump to Any Player..."] + [f"Hitter: {b}" for b in all_batters] + [f"Pitcher: {p}" for p in all_pitchers]
+player_search_list = [f"Hitter: {b}" for b in all_batters] + [f"Pitcher: {p}" for p in all_pitchers]
 
-search_selection = nav_cols[2].selectbox("Quick Search", options=player_search_list, label_visibility="collapsed")
-if search_selection != "🔍 Search & Jump to Any Player...":
+# index=None creates a clean blank input field with no text to delete
+search_selection = nav_cols[2].selectbox(
+    "Quick Search",
+    options=player_search_list,
+    index=None,
+    placeholder="🔍 Type player name...",
+    label_visibility="collapsed",
+    key="blank_player_search"
+)
+
+if search_selection:
     if search_selection.startswith("Hitter: "):
         st.session_state["selected_player"] = search_selection.replace("Hitter: ", "")
         st.session_state["nav_view"] = "🔥 Hitter Cards"
@@ -386,7 +396,6 @@ if search_selection != "🔍 Search & Jump to Any Player...":
 with st.expander("🤖 AI Scout Assistant — Ask Anything About Any Player"):
     st.caption("Ask questions like: *'How hard does Ashton Roache hit?'*, *'What does Zaylun Fenn throw when behind?'*, or *'Who has the highest fastball velo?'*")
     
-    # Display recent chat history
     for msg in st.session_state["chat_history"][-4:]:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
@@ -402,14 +411,11 @@ with st.expander("🤖 AI Scout Assistant — Ask Anything About Any Player"):
             q = user_prompt.lower()
             response_text = ""
             
-            # Check for API key if user added it in Streamlit secrets
             gemini_key = st.secrets.get("GEMINI_API_KEY", None)
-            
             if gemini_key:
                 try:
                     from google import genai
                     client = genai.Client(api_key=gemini_key)
-                    # Sample league context
                     top_ev = season_data.groupby('Batter')['ExitSpeed'].max().nlargest(5).to_dict()
                     top_velo = season_data.groupby('Pitcher')['RelSpeed'].max().nlargest(5).to_dict()
                     system_ctx = f"You are the Marshalls College Baseball League expert scouting AI. Answer concisely (2-4 sentences max). League Context: Top Exit Velo: {top_ev}. Top Pitch Velo: {top_velo}."
@@ -421,9 +427,7 @@ with st.expander("🤖 AI Scout Assistant — Ask Anything About Any Player"):
                 except Exception:
                     response_text = None
 
-            # Fallback to Built-in Deterministic Scouting Analytics Engine
             if not response_text:
-                # 1. Match Batter query
                 matched_batter = next((b for b in all_batters if any(part.lower() in q for part in b.replace(",", "").split())), None)
                 matched_pitcher = next((p for p in all_pitchers if any(part.lower() in q for part in p.replace(",", "").split())), None)
                 
