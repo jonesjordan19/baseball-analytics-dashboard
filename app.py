@@ -11,8 +11,28 @@ from concurrent.futures import ThreadPoolExecutor
 st.set_page_config(
     page_title="Marshalls League Data Engine",
     page_icon="⚾",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
+
+# Custom CSS for Mobile Optimization
+st.markdown("""
+<style>
+    @media (max-width: 768px) {
+        .block-container {
+            padding-left: 0.8rem;
+            padding-right: 0.8rem;
+            padding-top: 1rem;
+        }
+        div[data-testid="stMetricValue"] {
+            font-size: 1.3rem !important;
+        }
+        div[data-testid="stMetricLabel"] {
+            font-size: 0.75rem !important;
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
 
 MANIFEST_SHEET_ID = "1Xc3lx4ybIfp9R14ROhCWOD1RpnKIhbNYU76dYQUZdow"
 
@@ -157,9 +177,9 @@ def render_100pct_stacked_bar(df_data, category_col, fixed_order, show_legend=Fa
         ))
 
     fig.update_layout(
-        barmode='stack', height=300, margin=dict(l=10, r=15, t=10, b=25),
+        barmode='stack', height=280, margin=dict(l=10, r=15, t=10, b=25),
         xaxis=dict(range=[0, 100], ticksuffix="%", dtick=25, gridcolor="rgba(0,0,0,0.08)", zeroline=False),
-        yaxis=dict(autorange="reversed", tickfont=dict(size=12, color="#111827", family="Arial Black")),
+        yaxis=dict(autorange="reversed", tickfont=dict(size=11, color="#111827", family="Arial Black")),
         plot_bgcolor="#FFFFFF", paper_bgcolor="#FFFFFF"
     )
     return fig
@@ -193,7 +213,7 @@ def render_strike_zone_figure(df_pitches):
         fig.add_trace(go.Scatter(
             x=group['PlateLocSide'], y=group['PlateLocHeight'],
             mode='markers', name=ptype, hovertext=hover_info, hoverinfo="text",
-            marker=dict(size=10, opacity=0.85)
+            marker=dict(size=9, opacity=0.85)
         ))
 
     contact_p = df_pitches[df_pitches['ExitSpeed'].notna() & (df_pitches['ExitSpeed'] >= 40)]
@@ -202,12 +222,12 @@ def render_strike_zone_figure(df_pitches):
         fig.add_trace(go.Scatter(
             x=contact_p['PlateLocSide'], y=contact_p['PlateLocHeight'],
             mode='markers', name="In Play", hovertext=hover_contact, hoverinfo="text",
-            marker=dict(size=16, color='rgba(0,0,0,0)', line=dict(color='#EAB308', width=3.5))
+            marker=dict(size=15, color='rgba(0,0,0,0)', line=dict(color='#EAB308', width=3))
         ))
 
-    fig.update_xaxes(range=[-2.2, 2.2], title="Horizontal Plate Location (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
-    fig.update_yaxes(range=[0.0, 4.5], title="Height from Ground (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
-    fig.update_layout(height=420, margin=dict(l=10, r=10, t=30, b=10),
+    fig.update_xaxes(range=[-2.2, 2.2], title="Horizontal Plate (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
+    fig.update_yaxes(range=[0.0, 4.5], title="Plate Height (ft)", zeroline=False, gridcolor="rgba(0,0,0,0.06)")
+    fig.update_layout(height=380, margin=dict(l=10, r=10, t=25, b=10),
                       legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                       plot_bgcolor="rgba(245, 247, 250, 0.6)")
     return fig
@@ -249,14 +269,14 @@ def render_field_spray_chart(batted_df):
             )
             fig.add_trace(go.Scatter(
                 x=valid_bip['Field_X'], y=valid_bip['Field_Y'], mode='markers',
-                marker=dict(size=12, color=valid_bip['ExitSpeed'], colorscale='Turbo', cmin=70, cmax=105,
-                            colorbar=dict(title="EV (mph)", x=1.02, thickness=12), line=dict(color='black', width=1)),
+                marker=dict(size=11, color=valid_bip['ExitSpeed'], colorscale='Turbo', cmin=70, cmax=105,
+                            colorbar=dict(title="EV (mph)", x=1.02, thickness=10), line=dict(color='black', width=1)),
                 text=hover_text, hoverinfo="text", name="Batted Ball"
             ))
 
     fig.update_xaxes(range=[-260, 260], showgrid=False, zeroline=False, visible=False)
     fig.update_yaxes(range=[-20, 430], showgrid=False, zeroline=False, visible=False)
-    fig.update_layout(height=420, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="rgba(245, 247, 250, 0.6)")
+    fig.update_layout(height=380, margin=dict(l=10, r=10, t=25, b=10), plot_bgcolor="rgba(245, 247, 250, 0.6)")
     return fig
 
 def select_player_callback(player_name, target_view):
@@ -288,6 +308,27 @@ if data.empty:
     st.warning("Telemetry is loading. Please check permissions on the Google Sheet.")
     st.stop()
 
+# ----------------- UNIVERSAL PLAYER SEARCH BAR -----------------
+all_batters = sorted([b for b in data['Batter'].dropna().unique() if str(b).strip()])
+all_pitchers = sorted([p for p in data['Pitcher'].dropna().unique() if str(p).strip()])
+
+player_options = ["🔍 Search & Jump to Any Player..."]
+player_options += [f"Hitter: {b}" for b in all_batters]
+player_options += [f"Pitcher: {p}" for p in all_pitchers]
+
+search_selection = st.selectbox("Quick Player Search", options=player_options, label_visibility="collapsed")
+if search_selection != "🔍 Search & Jump to Any Player...":
+    if search_selection.startswith("Hitter: "):
+        h_name = search_selection.replace("Hitter: ", "")
+        st.session_state["selected_player"] = h_name
+        st.session_state["nav_radio"] = "🔥 Individual Hitter Card"
+        st.rerun()
+    elif search_selection.startswith("Pitcher: "):
+        p_name = search_selection.replace("Pitcher: ", "")
+        st.session_state["selected_player"] = p_name
+        st.session_state["nav_radio"] = "🛡️ Individual Pitcher Card"
+        st.rerun()
+
 st.sidebar.header("🎯 Navigation & Controls")
 report_options = [
     "🏆 League Leaderboard Hub",
@@ -303,11 +344,11 @@ season_data = data[data['Season_Year'] == selected_year]
 
 def display_shared_sequencing_legend():
     st.markdown("""
-        <div style='display: flex; gap: 24px; align-items: center; margin-bottom: 8px; margin-top: 4px;'>
-            <span style='display: flex; align-items: center;'><span style='height: 12px; width: 12px; background-color: #EF4444; border-radius: 50%; display: inline-block; margin-right: 6px;'></span><b>Fastballs</b></span>
-            <span style='display: flex; align-items: center;'><span style='height: 12px; width: 12px; background-color: #06B6D4; border-radius: 50%; display: inline-block; margin-right: 6px;'></span><b>Breaking</b></span>
-            <span style='display: flex; align-items: center;'><span style='height: 12px; width: 12px; background-color: #10B981; border-radius: 50%; display: inline-block; margin-right: 6px;'></span><b>Offspeed</b></span>
-            <span style='display: flex; align-items: center;'><span style='height: 12px; width: 12px; background-color: #6B7280; border-radius: 50%; display: inline-block; margin-right: 6px;'></span><b>UD (Other)</b></span>
+        <div style='display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 8px;'>
+            <span style='display: flex; align-items: center;'><span style='height: 10px; width: 10px; background-color: #EF4444; border-radius: 50%; display: inline-block; margin-right: 5px;'></span><small><b>Fastballs</b></small></span>
+            <span style='display: flex; align-items: center;'><span style='height: 10px; width: 10px; background-color: #06B6D4; border-radius: 50%; display: inline-block; margin-right: 5px;'></span><small><b>Breaking</b></small></span>
+            <span style='display: flex; align-items: center;'><span style='height: 10px; width: 10px; background-color: #10B981; border-radius: 50%; display: inline-block; margin-right: 5px;'></span><small><b>Offspeed</b></small></span>
+            <span style='display: flex; align-items: center;'><span style='height: 10px; width: 10px; background-color: #6B7280; border-radius: 50%; display: inline-block; margin-right: 5px;'></span><small><b>UD</b></small></span>
         </div>
     """, unsafe_allow_html=True)
 
@@ -461,6 +502,7 @@ elif report_scope == "🔥 Individual Hitter Card":
         else:
             st.info("**Aggression on strikes:** Attack early count fastballs in the strike zone.")
 
+    # KPI Layout: 5 Columns on desktop, wrap cleanly on mobile
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Hard-Hit Rate (90+)", f"{len(hard_hits)}/{len(in_play)}" if len(in_play) > 0 else "0/0")[cite: 2]
     k2.metric("Average Exit Velo", f"{avg_ev:.1f} mph" if avg_ev > 0 else "N/A")[cite: 2]
@@ -470,7 +512,7 @@ elif report_scope == "🔥 Individual Hitter Card":
 
     st.divider()
 
-    col_zone, col_spray = st.columns([1, 1])
+    col_zone, col_spray = st.columns(2)
     with col_zone:
         st.markdown("#### **Pitches Seen (Catcher's View)**")[cite: 2]
         if 'PlateLocSide' in b_data.columns and 'PlateLocHeight' in b_data.columns:
@@ -605,14 +647,14 @@ elif report_scope == "🛡️ Individual Pitcher Card":
 
     st.divider()
 
-    p_col1, p_col2 = st.columns([1.1, 1.3])
+    p_col1, p_col2 = st.columns(2)
     with p_col1:
         st.markdown("#### **Pitch Movement (Pitcher's View)**")[cite: 1]
         fig_mov = px.scatter(
             p_data, x="HorzBreak", y="InducedVertBreak",
             color="TaggedPitchType", hover_data=["RelSpeed", "SpinRate"],
             labels={"HorzBreak": "Horizontal Break (HB) [in]", "InducedVertBreak": "Induced Vertical Break (IVB) [in]"},
-            height=400
+            height=380
         )
         fig_mov.update_xaxes(range=[-25, 25], gridcolor="rgba(0,0,0,0.06)")
         fig_mov.update_yaxes(range=[-25, 25], gridcolor="rgba(0,0,0,0.06)")
@@ -865,8 +907,8 @@ else:
                 )
                 fig_m.update_xaxes(range=[-25, 25], gridcolor="rgba(0,0,0,0.06)")
                 fig_m.update_yaxes(range=[-25, 25], gridcolor="rgba(0,0,0,0.06)")
-                fig_m.add_hline(y=0, line_dash="dash", line_color="#888888")
-                fig_m.add_vline(x=0, line_dash="dash", line_color="#888888")
+                fig_mov.add_hline(y=0, line_dash="dash", line_color="#888888")
+                fig_mov.add_vline(x=0, line_dash="dash", line_color="#888888")
                 st.plotly_chart(fig_m, use_container_width=True)
             with cp_z:
                 st.plotly_chart(render_strike_zone_figure(sp_data), use_container_width=True)
