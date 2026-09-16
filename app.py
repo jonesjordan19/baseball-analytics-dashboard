@@ -367,34 +367,31 @@ if data.empty:
 if 'ParsedDate' not in data.columns:
     data['ParsedDate'] = data['Game_Source'].apply(extract_game_date)
 
-# ----------------- PROCESS QUICK SEARCH FIRST (PREVENTS OVERWRITE) -----------------
+# ----------------- TOP CONTROLS & SEARCH -----------------
 nav_cols = st.columns([1.2, 0.8, 1.4, 1.4])
 
 available_years = sorted(data['Season_Year'].dropna().unique())
 selected_year = nav_cols[1].selectbox("Season Year", options=available_years, index=0)
 season_raw = data[data['Season_Year'] == selected_year]
 
-all_batters_full = sorted([b for b in season_raw['Batter'].dropna().unique() if str(b).strip()])
-all_pitchers_full = sorted([p for p in season_raw['Pitcher'].dropna().unique() if str(p).strip()])
-player_search_list = [f"Hitter: {b}" for b in all_batters_full] + [f"Pitcher: {p}" for p in all_pitchers_full]
+# Clean Text Input Search (replaces cumbersome dropdowns on mobile)
+search_query = nav_cols[3].text_input("Quick Search", placeholder="🔍 Type player name...", label_visibility="collapsed", key="player_text_search")
 
-search_selection = nav_cols[3].selectbox(
-    "Quick Search",
-    options=player_search_list,
-    index=None,
-    placeholder="🔍 Type player name...",
-    label_visibility="collapsed",
-    key="blank_player_search"
-)
-
-if search_selection:
-    if search_selection.startswith("Hitter: "):
-        st.session_state["selected_player"] = search_selection.replace("Hitter: ", "")
+if search_query and len(search_query.strip()) >= 2:
+    q_lower = search_query.strip().lower()
+    all_b = sorted(season_raw['Batter'].dropna().unique())
+    all_p = sorted(season_raw['Pitcher'].dropna().unique())
+    
+    match_b = next((b for b in all_b if q_lower in b.lower()), None)
+    match_p = next((p for p in all_p if q_lower in p.lower()), None)
+    
+    if match_b:
+        st.session_state["selected_player"] = match_b
         st.session_state["top_nav_radio"] = "🔥 Hitter Cards"
         st.session_state["nav_view"] = "🔥 Hitter Cards"
         st.rerun()
-    elif search_selection.startswith("Pitcher: "):
-        st.session_state["selected_player"] = search_selection.replace("Pitcher: ", "")
+    elif match_p:
+        st.session_state["selected_player"] = match_p
         st.session_state["top_nav_radio"] = "🛡️ Pitcher Cards"
         st.session_state["nav_view"] = "🛡️ Pitcher Cards"
         st.rerun()
@@ -621,7 +618,6 @@ if st.session_state["nav_view"] == "🏆 Leaderboard Hub":
 # =====================================================================
 elif st.session_state["nav_view"] == "🔥 Hitter Cards":
     if st.button("⬅️ Return to Leaderboard Hub"):
-        st.session_state["top_nav_radio"] = "🏆 Leaderboard Hub"
         st.session_state["nav_view"] = "🏆 Leaderboard Hub"
         st.rerun()
 
