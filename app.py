@@ -15,21 +15,50 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for Mobile Optimization
+# ----------------- MOBILE-FIRST RESPONSIVE STYLING -----------------
 st.markdown("""
 <style>
     @media (max-width: 768px) {
         .block-container {
-            padding-left: 0.8rem;
-            padding-right: 0.8rem;
-            padding-top: 1rem;
+            padding-left: 0.75rem !important;
+            padding-right: 0.75rem !important;
+            padding-top: 1rem !important;
         }
         div[data-testid="stMetricValue"] {
-            font-size: 1.3rem !important;
+            font-size: 1.25rem !important;
         }
         div[data-testid="stMetricLabel"] {
             font-size: 0.75rem !important;
         }
+        h1 {
+            font-size: 1.6rem !important;
+        }
+        h2, h3 {
+            font-size: 1.3rem !important;
+        }
+        h4, h5 {
+            font-size: 1.05rem !important;
+        }
+    }
+    
+    /* Sports Card Button Styling for Leaderboard Rows */
+    div.stButton > button {
+        width: 100% !important;
+        text-align: left !important;
+        padding: 0.6rem 1rem !important;
+        border-radius: 8px !important;
+        border: 1px solid #E2E8F0 !important;
+        background-color: #F8FAFC !important;
+        color: #0F172A !important;
+        font-weight: 500 !important;
+        margin-bottom: 4px !important;
+        transition: all 0.15s ease !important;
+    }
+    div.stButton > button:hover {
+        border-color: #2563EB !important;
+        background-color: #EFF6FF !important;
+        color: #1D4ED8 !important;
+        transform: translateX(2px);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -283,20 +312,24 @@ def select_player_callback(player_name, target_view):
     st.session_state["selected_player"] = player_name
     st.session_state["nav_radio"] = target_view
 
+# Unified Sports Card Leaderboard Row (Mobile & Desktop Friendly)
 def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, submetric_label, submetric_col, player_type, key_prefix):
     target_view = "🔥 Individual Hitter Card" if player_type == "Hitter" else "🛡️ Individual Pitcher Card"
     for idx, r in df_ranked.iterrows():
         p_name = str(r[name_col])
         m_val = r[metric_col]
         sub_val = r[submetric_col]
-        c_rank, c_btn, c_stat = st.columns([0.6, 3.2, 2.2])
-        c_rank.markdown(f"**#{idx+1}**")
-        c_btn.button(
-            f"{p_name}", key=f"{key_prefix}_{idx}_{p_name}",
-            on_click=select_player_callback, args=(p_name, target_view),
+        
+        # Format as a unified sports card label: #1 Player Name — 105.2 mph (89.1 avg)
+        card_label = f"#{idx+1}   {p_name}   —   {m_val} {metric_label}  ({sub_val} {submetric_label})"
+        
+        st.button(
+            card_label,
+            key=f"{key_prefix}_{idx}_{p_name}",
+            on_click=select_player_callback,
+            args=(p_name, target_view),
             use_container_width=True
         )
-        c_stat.markdown(f"**{m_val}** {metric_label} <span style='color:gray; font-size:12px;'>({sub_val} {submetric_label})</span>", unsafe_allow_html=True)
 
 st.title("⚡ Marshalls League Data Engine")
 st.markdown("##### **Created by Jordan Jones** | *Official WIN Reality SmartPark Analytics & Scouting Suite*")
@@ -357,7 +390,7 @@ def display_shared_sequencing_legend():
 # =====================================================================
 if report_scope == "🏆 League Leaderboard Hub":
     st.subheader(f"🏆 Marshalls League Official Leaderboard ({selected_year})")
-    st.caption("Click directly on any player's name button to immediately open their full-season scouting card.")
+    st.caption("Tap any player card below to view their full development profile:")
 
     lb_tab_hit, lb_tab_pitch = st.tabs(["💥 Hitting Leaderboards", "🎯 Pitching Leaderboards"])
 
@@ -502,7 +535,7 @@ elif report_scope == "🔥 Individual Hitter Card":
         else:
             st.info("**Aggression on strikes:** Attack early count fastballs in the strike zone.")
 
-    # KPI Layout: 5 Columns on desktop, wrap cleanly on mobile
+    # KPI Layout: desktop columns wrap nicely on mobile
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Hard-Hit Rate (90+)", f"{len(hard_hits)}/{len(in_play)}" if len(in_play) > 0 else "0/0")[cite: 2]
     k2.metric("Average Exit Velo", f"{avg_ev:.1f} mph" if avg_ev > 0 else "N/A")[cite: 2]
@@ -907,8 +940,8 @@ else:
                 )
                 fig_m.update_xaxes(range=[-25, 25], gridcolor="rgba(0,0,0,0.06)")
                 fig_m.update_yaxes(range=[-25, 25], gridcolor="rgba(0,0,0,0.06)")
-                fig_mov.add_hline(y=0, line_dash="dash", line_color="#888888")
-                fig_mov.add_vline(x=0, line_dash="dash", line_color="#888888")
+                fig_m.add_hline(y=0, line_dash="dash", line_color="#888888")
+                fig_m.add_vline(x=0, line_dash="dash", line_color="#888888")
                 st.plotly_chart(fig_m, use_container_width=True)
             with cp_z:
                 st.plotly_chart(render_strike_zone_figure(sp_data), use_container_width=True)
