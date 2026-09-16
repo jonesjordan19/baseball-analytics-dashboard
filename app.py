@@ -384,9 +384,17 @@ available_years = sorted(data['Season_Year'].dropna().unique())
 selected_year = nav_cols[1].selectbox("Season Year", options=available_years, index=0)
 season_raw = data[data['Season_Year'] == selected_year]
 
-# Flexible Date Picker (No strict min/max constraints to prevent value-below-min errors)
+all_dates = sorted(season_raw['ParsedDate'].dropna().unique())
+min_d = all_dates[0] if all_dates else date(2026, 6, 1)
+max_d = all_dates[-1] if all_dates else date(2026, 8, 15)
+
+default_start = max(date(2026, 6, 1), min_d)
+default_end = min(date(2026, 7, 31), max_d)
+if default_start > default_end:
+    default_start, default_end = min_d, max_d
+
 if "date_filter_range" not in st.session_state:
-    st.session_state["date_filter_range"] = (date(2026, 6, 1), date(2026, 7, 31))
+    st.session_state["date_filter_range"] = (default_start, default_end)
 
 date_range = nav_cols[2].date_input(
     "Date Range",
@@ -398,7 +406,6 @@ date_range = nav_cols[2].date_input(
 if date_range != st.session_state["date_filter_range"]:
     st.session_state["date_filter_range"] = date_range
 
-# Apply active date range filter
 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
     start_d, end_d = date_range
     season_data = season_raw[(season_raw['ParsedDate'] >= start_d) & (season_raw['ParsedDate'] <= end_d)].copy()
@@ -610,7 +617,7 @@ elif st.session_state["nav_view"] == "🔥 Hitter Cards":
         st.session_state["nav_view"] = "🏆 Leaderboard Hub"
         st.rerun()
 
-    batters = sorted([b for b in season_data['Batter'].dropna().unique() if str(b).strip()])
+    batters = sorted([b for b in season_raw['Batter'].dropna().unique() if str(b).strip()])
     if not batters:
         st.warning("No hitter data tracked for this selection.")
         st.stop()
@@ -623,12 +630,13 @@ elif st.session_state["nav_view"] == "🔥 Hitter Cards":
     selected_batter = col_h_sel.selectbox("Select Batter", options=batters, index=default_batter_idx)
     st.session_state["selected_player"] = selected_batter
 
-    player_games = ["All Games (Cumulative)"] + sorted([g for g in season_data[season_data['Batter'] == selected_batter]['Game_Source'].dropna().unique()])
+    # FIX: Pull game list from season_raw so all games appear regardless of date filter
+    player_games = ["All Games (Cumulative)"] + sorted([g for g in season_raw[season_raw['Batter'] == selected_batter]['Game_Source'].dropna().unique()])
     selected_game = col_h_gm.selectbox("Scope Filter", options=player_games, index=0)
     
     b_data = season_data[season_data['Batter'] == selected_batter].copy()
     if selected_game != "All Games (Cumulative)":
-        b_data = b_data[b_data['Game_Source'] == selected_game]
+        b_data = season_raw[(season_raw['Batter'] == selected_batter) & (season_raw['Game_Source'] == selected_game)].copy()
 
     b_data = enrich_pitch_sequencing_data(b_data)
 
@@ -747,7 +755,7 @@ elif st.session_state["nav_view"] == "🛡️ Pitcher Cards":
         st.session_state["nav_view"] = "🏆 Leaderboard Hub"
         st.rerun()
 
-    pitchers = sorted([p for p in season_data['Pitcher'].dropna().unique() if str(p).strip()])
+    pitchers = sorted([p for p in season_raw['Pitcher'].dropna().unique() if str(p).strip()])
     if not pitchers:
         st.warning("No pitcher data tracked for this selection.")
         st.stop()
@@ -760,12 +768,13 @@ elif st.session_state["nav_view"] == "🛡️ Pitcher Cards":
     selected_pitcher = col_p_sel.selectbox("Select Pitcher", options=pitchers, index=default_pitcher_idx)
     st.session_state["selected_player"] = selected_pitcher
 
-    pitcher_games = ["All Games (Cumulative)"] + sorted([g for g in season_data[season_data['Pitcher'] == selected_pitcher]['Game_Source'].dropna().unique()])
+    # FIX: Pull game list from season_raw so all games appear regardless of date filter
+    pitcher_games = ["All Games (Cumulative)"] + sorted([g for g in season_raw[season_raw['Pitcher'] == selected_pitcher]['Game_Source'].dropna().unique()])
     selected_game = col_p_gm.selectbox("Scope Filter", options=pitcher_games, index=0)
 
     p_data = season_data[season_data['Pitcher'] == selected_pitcher].copy()
     if selected_game != "All Games (Cumulative)":
-        p_data = p_data[p_data['Game_Source'] == selected_game]
+        p_data = season_raw[(season_raw['Pitcher'] == selected_pitcher) & (season_raw['Game_Source'] == selected_game)].copy()
 
     p_data = enrich_pitch_sequencing_data(p_data)
 
