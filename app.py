@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import numpy as np
 import requests
 import io
 from concurrent.futures import ThreadPoolExecutor
@@ -25,7 +26,7 @@ def fetch_single_csv(args):
                 df['Season_Year'] = int(season_year)
                 df['Game_Source'] = str(game_name)
                 
-                # Sanitize tracking errors
+                # Sanitize tracking artifacts
                 if 'RelSpeed' in df.columns:
                     df = df[(df['RelSpeed'] >= 35.0) & (df['RelSpeed'] <= 106.0)]
                 if 'isOutlier' in df.columns:
@@ -67,6 +68,7 @@ def load_marshalls_telemetry(sheet_id):
     return pd.DataFrame()
 
 def render_strike_zone_figure(df_pitches):
+    """Draws a professional catcher-view strike zone with 9 inner quadrants and home plate."""
     fig = go.Figure()
     non_contact = df_pitches[df_pitches['ExitSpeed'].isna() | (df_pitches['ExitSpeed'] < 40)]
     for ptype, group in non_contact.groupby('TaggedPitchType'):
@@ -76,7 +78,7 @@ def render_strike_zone_figure(df_pitches):
             mode='markers', name=ptype,
             hovertext=hover_info,
             hoverinfo="text",
-            marker=dict(size=11, opacity=0.85)
+            marker=dict(size=10, opacity=0.85)
         ))
 
     contact_p = df_pitches[df_pitches['ExitSpeed'].notna() & (df_pitches['ExitSpeed'] >= 40)]
@@ -84,26 +86,26 @@ def render_strike_zone_figure(df_pitches):
         hover_contact = contact_p.apply(lambda r: f"CONTACT: {r.get('TaggedPitchType', '')} | {r.get('RelSpeed', 0):.1f} mph<br>EV: {r.get('ExitSpeed', 0):.1f} mph | LA: {r.get('Angle', 0):.0f}°<br>Result: {r.get('PlayResult', '')}", axis=1)
         fig.add_trace(go.Scatter(
             x=contact_p['PlateLocSide'], y=contact_p['PlateLocHeight'],
-            mode='markers', name="In Play / Contact",
+            mode='markers', name="In Play",
             hovertext=hover_contact,
             hoverinfo="text",
-            marker=dict(size=18, color='rgba(0,0,0,0)',
-                        line=dict(color='#FFD700', width=3.5))
+            marker=dict(size=16, color='rgba(0,0,0,0)',
+                        line=dict(color='#FFD700', width=3))
         ))
 
     fig.add_shape(type="rect", x0=-0.83, y0=1.5, x1=0.83, y1=3.5,
-                  line=dict(color="#FFFFFF", width=3))
+                  line=dict(color="#FFFFFF", width=2.5))
 
     x_third = 1.66 / 3.0
     y_third = 2.0 / 3.0
     fig.add_shape(type="line", x0=-0.83 + x_third, y0=1.5, x1=-0.83 + x_third, y1=3.5,
-                  line=dict(color="rgba(255,255,255,0.25)", width=1.5, dash="dot"))
+                  line=dict(color="rgba(255,255,255,0.25)", width=1, dash="dot"))
     fig.add_shape(type="line", x0=0.83 - x_third, y0=1.5, x1=0.83 - x_third, y1=3.5,
-                  line=dict(color="rgba(255,255,255,0.25)", width=1.5, dash="dot"))
+                  line=dict(color="rgba(255,255,255,0.25)", width=1, dash="dot"))
     fig.add_shape(type="line", x0=-0.83, y0=1.5 + y_third, x1=0.83, y1=1.5 + y_third,
-                  line=dict(color="rgba(255,255,255,0.25)", width=1.5, dash="dot"))
+                  line=dict(color="rgba(255,255,255,0.25)", width=1, dash="dot"))
     fig.add_shape(type="line", x0=-0.83, y0=3.5 - y_third, x1=0.83, y1=3.5 - y_third,
-                  line=dict(color="rgba(255,255,255,0.25)", width=1.5, dash="dot"))
+                  line=dict(color="rgba(255,255,255,0.25)", width=1, dash="dot"))
 
     fig.add_trace(go.Scatter(
         x=[-0.708, 0.708, 0.708, 0.0, -0.708, -0.708],
@@ -113,10 +115,88 @@ def render_strike_zone_figure(df_pitches):
         mode="lines", showlegend=False, hoverinfo="skip"
     ))
 
-    fig.update_xaxes(range=[-2.2, 2.2], title="Horizontal Plate Location (ft)", zeroline=False, gridcolor="rgba(255,255,255,0.08)")
-    fig.update_yaxes(range=[0.0, 4.5], title="Height from Ground (ft)", zeroline=False, gridcolor="rgba(255,255,255,0.08)")
-    fig.update_layout(template="plotly_dark", height=450, margin=dict(l=20, r=20, t=30, b=20),
+    fig.update_xaxes(range=[-2.2, 2.2], title="Plate Side (ft)", zeroline=False, gridcolor="rgba(255,255,255,0.08)")
+    fig.update_yaxes(range=[0.0, 4.5], title="Plate Height (ft)", zeroline=False, gridcolor="rgba(255,255,255,0.08)")
+    fig.update_layout(template="plotly_dark", height=420, margin=dict(l=10, r=10, t=30, b=10),
                       legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    return fig
+
+def render_field_spray_chart(batted_df):
+    """Draws a true baseball diamond field spray chart from TrackMan direction & distance."""
+    fig = go.Figure()
+
+    # Field Outline Lines
+    # Foul lines (330 ft to LF and RF corners: -45 deg and +45 deg)
+    rad_lf = np.radians(135)
+    rad_rf = np.radians(45)
+    lf_x, lf_y = 330 * np.cos(rad_lf), 330 * np.sin(rad_lf)
+    rf_x, rf_y = 330 * np.cos(rad_rf), 330 * np.sin(rad_rf)
+
+    # Left & Right Foul Lines
+    fig.add_trace(go.Scatter(x=[0, lf_x], y=[0, lf_y], mode='lines', line=dict(color="rgba(255,255,255,0.6)", width=2), showlegend=False, hoverinfo='skip'))
+    fig.add_trace(go.Scatter(x=[0, rf_x], y=[0, rf_y], mode='lines', line=dict(color="rgba(255,255,255,0.6)", width=2), showlegend=False, hoverinfo='skip'))
+
+    # Outfield Wall Arc (~400 ft to dead center, 330 ft corners)
+    angles = np.linspace(45, 135, 60)
+    # Scaled arc radius: 330 at corners, 400 in dead center
+    radii = 330 + 70 * np.sin(np.radians(angles - 45) * 2)
+    arc_x = radii * np.cos(np.radians(angles))
+    arc_y = radii * np.sin(np.radians(angles))
+    fig.add_trace(go.Scatter(x=arc_x, y=arc_y, mode='lines', line=dict(color="rgba(255,255,255,0.7)", width=3), showlegend=False, hoverinfo='skip'))
+
+    # Infield Diamond (90 ft bases: 1B, 2B, 3B, Home)
+    b1_x, b1_y = 90 * np.cos(np.radians(45)), 90 * np.sin(np.radians(45))
+    b2_x, b2_y = 0, 127.28
+    b3_x, b3_y = 90 * np.cos(np.radians(135)), 90 * np.sin(np.radians(135))
+    fig.add_trace(go.Scatter(
+        x=[0, b1_x, b2_x, b3_x, 0],
+        y=[0, b1_y, b2_y, b3_y, 0],
+        mode='lines', line=dict(color="rgba(255,255,255,0.4)", width=1.5, dash="dash"),
+        showlegend=False, hoverinfo='skip'
+    ))
+
+    # Convert TrackMan Direction and Distance to Cartesian X, Y
+    # TrackMan Direction: 0 deg = dead center, negative = left, positive = right
+    if not batted_df.empty and 'Direction' in batted_df.columns and 'Distance' in batted_df.columns:
+        valid_bip = batted_df[batted_df['Distance'].notna() & (batted_df['Distance'] > 15)].copy()
+        
+        if not valid_bip.empty:
+            # Convert TrackMan bearing (0 = Center Field / 90 deg Cartesian)
+            theta_rad = np.radians(90 - valid_bip['Direction'])
+            valid_bip['Field_X'] = valid_bip['Distance'] * np.cos(theta_rad)
+            valid_bip['Field_Y'] = valid_bip['Distance'] * np.sin(theta_rad)
+
+            hover_text = valid_bip.apply(
+                lambda r: f"EV: {r.get('ExitSpeed', 0):.1f} mph<br>Dist: {r.get('Distance', 0):.0f} ft<br>LA: {r.get('Angle', 0):.0f}°<br>Pitch: {r.get('TaggedPitchType', '')}<br>Result: {r.get('PlayResult', '')}",
+                axis=1
+            )
+
+            fig.add_trace(go.Scatter(
+                x=valid_bip['Field_X'],
+                y=valid_bip['Field_Y'],
+                mode='markers',
+                marker=dict(
+                    size=12,
+                    color=valid_bip['ExitSpeed'],
+                    colorscale='Turbo',
+                    cmin=70,
+                    cmax=105,
+                    colorbar=dict(title="EV (mph)", x=1.02, thickness=12),
+                    line=dict(color='white', width=1)
+                ),
+                text=hover_text,
+                hoverinfo="text",
+                name="Batted Ball"
+            ))
+
+    fig.update_xaxes(range=[-260, 260], showgrid=False, zeroline=False, visible=False)
+    fig.update_yaxes(range=[-20, 430], showgrid=False, zeroline=False, visible=False)
+    fig.update_layout(
+        template="plotly_dark",
+        height=420,
+        margin=dict(l=10, r=10, t=30, b=10),
+        plot_bgcolor="rgba(10, 15, 20, 0.9)"
+    )
     return fig
 
 # ----------------- BRANDING & HEADER -----------------
@@ -145,7 +225,7 @@ selected_year = st.sidebar.selectbox("Season Year", options=available_years, ind
 season_data = data[data['Season_Year'] == selected_year]
 
 # =====================================================================
-# VIEW 1: LEAGUE LEADERBOARD HUB (DEFAULT HOME VIEW)
+# VIEW 1: LEAGUE LEADERBOARD HUB
 # =====================================================================
 if report_scope == "🏆 League Leaderboard Hub":
     st.subheader(f"🏆 Marshalls League Official Leaderboard ({selected_year})")
@@ -153,11 +233,9 @@ if report_scope == "🏆 League Leaderboard Hub":
 
     lb_tab_hit, lb_tab_pitch = st.tabs(["💥 Hitting Leaderboards", "🎯 Pitching Leaderboards"])
 
-    # --- HITTING LEADERBOARDS ---
     with lb_tab_hit:
         batted_all = season_data[season_data['ExitSpeed'].notna() & (season_data['ExitSpeed'] >= 40) & (season_data['Batter'].notna())]
         
-        # Aggregate hitter metrics
         hitter_agg = batted_all.groupby('Batter').agg(
             BIP=('ExitSpeed', 'count'),
             Max_EV=('ExitSpeed', 'max'),
@@ -200,12 +278,10 @@ if report_scope == "🏆 League Leaderboard Hub":
             top_sw.index = range(1, len(top_sw) + 1)
             st.dataframe(top_sw, use_container_width=True)
 
-    # --- PITCHING LEADERBOARDS ---
     with lb_tab_pitch:
         pitchers_all = season_data[season_data['Pitcher'].notna() & (season_data['Pitcher'] != '')]
         fb_all = pitchers_all[pitchers_all['TaggedPitchType'] == 'Fastball']
 
-        # Aggregate Pitcher Velocity & IVB
         p_fb_agg = fb_all.groupby('Pitcher').agg(
             FB_Pitches=('RelSpeed', 'count'),
             Max_FB=('RelSpeed', 'max'),
@@ -219,7 +295,6 @@ if report_scope == "🏆 League Leaderboard Hub":
         p_fb_agg['Avg_IVB'] = p_fb_agg['Avg_IVB'].round(1)
         p_fb_agg['Avg_Spin'] = p_fb_agg['Avg_Spin'].round(0)
 
-        # Strike Throwing Control
         p_control_agg = pitchers_all.groupby('Pitcher').agg(
             Total_Pitches=('PitchCall', 'count'),
             Strikes=('PitchCall', lambda x: x.astype(str).str.contains("Strike|Foul|InPlay", case=False, na=False).sum()),
@@ -259,7 +334,7 @@ if report_scope == "🏆 League Leaderboard Hub":
             st.dataframe(top_fps, use_container_width=True)
 
 # =====================================================================
-# VIEW 2: INDIVIDUAL HITTER REPORT CARD
+# VIEW 2: INDIVIDUAL HITTER REPORT CARD (WITH SPRAY CHART)
 # =====================================================================
 elif report_scope == "🔥 Individual Hitter Card":
     games = ["All Games (Season Cumulative)"] + sorted([g for g in season_data['Game_Source'].dropna().unique()])
@@ -292,11 +367,11 @@ elif report_scope == "🔥 Individual Hitter Card":
     t1, t2 = st.columns(2)
     with t1:
         if max_ev >= 95:
-            st.success(f"**Barrel was loud:** 100+ exit velo recorded ({max_ev:.1f} mph). Power on line drives.")
+            st.success(f"**Barrel was loud:** 100+ exit velo recorded ({max_ev:.1f} mph). Pure line drive power.")
         elif avg_ev >= 88:
             st.success(f"**Consistent contact:** Solid contact quality averaging {avg_ev:.1f} mph off the bat.")
         else:
-            st.info("**Working the counts:** Saw pitches and fought into deep counts.")
+            st.info("**Working the counts:** Fought into deep counts and saw quality pitches.")
 
     with t2:
         if len(ground_balls) > len(fly_balls) and len(in_play) > 0:
@@ -315,42 +390,50 @@ elif report_scope == "🔥 Individual Hitter Card":
 
     st.divider()
 
-    col_zone, col_seq = st.columns([1.1, 1.3])
+    # TWO COLUMNS: STRIKE ZONE & FIELD SPRAY CHART SIDE-BY-SIDE
+    col_zone, col_spray = st.columns([1, 1])
     with col_zone:
         st.markdown("#### **Pitches Seen (Catcher's View)**")
         if 'PlateLocSide' in b_data.columns and 'PlateLocHeight' in b_data.columns:
             st.plotly_chart(render_strike_zone_figure(b_data), use_container_width=True)
 
-    with col_seq:
-        st.markdown("#### **At-Bat Pitch Sequencing Timeline**")
-        st.caption("Chronological progression of every pitch seen in each plate appearance:")
-        sort_cols = [c for c in ['Inning', 'PAofInning', 'PitchofPA', 'Time'] if c in b_data.columns]
-        b_sorted = b_data.sort_values(by=sort_cols).copy() if sort_cols else b_data.copy()
-
-        timeline_data = []
-        for idx, r in b_sorted.iterrows():
-            inn = r.get('Inning', '-')
-            p_num = r.get('PitchofPA', '-')
-            count_str = f"{int(r.get('Balls', 0))}-{int(r.get('Strikes', 0))}"
-            ptype = r.get('TaggedPitchType', 'Unknown')
-            velo = f"{r.get('RelSpeed', 0):.1f} mph" if pd.notna(r.get('RelSpeed')) else "-"
-            call = r.get('PitchCall', '-')
-            ev = r.get('ExitSpeed', None)
-            la = r.get('Angle', None)
-            res = r.get('PlayResult', None)
-            
-            outcome = f"💥 In Play: {ev:.1f} mph, {la:.0f}° ({res if pd.notna(res) else 'Contact'})" if (pd.notna(ev) and ev >= 40) else call
-
-            timeline_data.append({
-                "Inn": inn, "Pitch #": p_num, "Count": count_str,
-                "Pitch Type": ptype, "Velo": velo, "Pitch Call / Outcome": outcome
-            })
-            
-        if timeline_data:
-            st.dataframe(pd.DataFrame(timeline_data), use_container_width=True, hide_index=True)
+    with col_spray:
+        st.markdown("#### **Field Spray Chart (Batted Ball Trajectories)**")
+        st.plotly_chart(render_field_spray_chart(in_play), use_container_width=True)
 
     st.divider()
 
+    # ROW 2: AT-BAT SEQUENCING TIMELINE
+    st.markdown("#### **At-Bat Pitch Sequencing Timeline**")
+    st.caption("Chronological progression of every pitch seen in each plate appearance:")
+    sort_cols = [c for c in ['Inning', 'PAofInning', 'PitchofPA', 'Time'] if c in b_data.columns]
+    b_sorted = b_data.sort_values(by=sort_cols).copy() if sort_cols else b_data.copy()
+
+    timeline_data = []
+    for idx, r in b_sorted.iterrows():
+        inn = r.get('Inning', '-')
+        p_num = r.get('PitchofPA', '-')
+        count_str = f"{int(r.get('Balls', 0))}-{int(r.get('Strikes', 0))}"
+        ptype = r.get('TaggedPitchType', 'Unknown')
+        velo = f"{r.get('RelSpeed', 0):.1f} mph" if pd.notna(r.get('RelSpeed')) else "-"
+        call = r.get('PitchCall', '-')
+        ev = r.get('ExitSpeed', None)
+        la = r.get('Angle', None)
+        res = r.get('PlayResult', None)
+        
+        outcome = f"💥 In Play: {ev:.1f} mph, {la:.0f}° ({res if pd.notna(res) else 'Contact'})" if (pd.notna(ev) and ev >= 40) else call
+
+        timeline_data.append({
+            "Inn": inn, "Pitch #": p_num, "Count": count_str,
+            "Pitch Type": ptype, "Velo": velo, "Pitch Call / Outcome": outcome
+        })
+        
+    if timeline_data:
+        st.dataframe(pd.DataFrame(timeline_data), use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # ROW 3: COUNT SEQUENCING BREAKDOWN
     st.markdown("#### **Count Sequencing — What Did The Opposition Throw You?**")
     def get_count_bucket(r):
         b = int(r.get('Balls', 0))
