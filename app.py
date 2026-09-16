@@ -49,6 +49,24 @@ st.markdown("""
             font-size: 0.75rem !important;
         }
     }
+    
+    div.stButton > button {
+        width: 100% !important;
+        text-align: left !important;
+        padding: 0.6rem 1rem !important;
+        border-radius: 8px !important;
+        border: 1px solid #E2E8F0 !important;
+        background-color: #F8FAFC !important;
+        color: #0F172A !important;
+        font-weight: 500 !important;
+        margin-bottom: 4px !important;
+        transition: all 0.15s ease !important;
+    }
+    div.stButton > button:hover {
+        border-color: #2563EB !important;
+        background-color: #EFF6FF !important;
+        color: #1D4ED8 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -320,6 +338,19 @@ def render_field_spray_chart(batted_df):
     fig.update_layout(height=380, margin=dict(l=10, r=10, t=25, b=10), plot_bgcolor="rgba(245, 247, 250, 0.6)")
     return fig
 
+# Clean button card renderer for leaderboards
+def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, submetric_label, submetric_col, player_type, key_prefix):
+    target_view = "🔥 Hitter Cards" if player_type == "Hitter" else "🛡️ Pitcher Cards"
+    for idx, r in df_ranked.iterrows():
+        p_name = str(r[name_col])
+        m_val = r[metric_col]
+        sub_val = r[submetric_col]
+        card_label = f"#{idx+1}   {p_name}   —   {m_val} {metric_label}  ({sub_val} {submetric_label})"
+        if st.button(card_label, key=f"{key_prefix}_{idx}_{p_name}", use_container_width=True):
+            st.session_state["selected_player"] = p_name
+            st.session_state["nav_view"] = target_view
+            st.rerun()
+
 # ----------------- TOP HEADER -----------------
 st.title("⚡ Marshalls League Data Engine")
 st.markdown("##### **Created by Jordan Jones** | *Official WIN Reality SmartPark Analytics & Scouting Suite*")
@@ -520,76 +551,22 @@ if st.session_state["nav_view"] == "🏆 Leaderboard Hub":
         with c_h1:
             st.markdown("#### 🚀 **Top 10 Max Exit Velocity (Raw Power)**")
             top_max_ev = hitter_agg.sort_values(by='Max_EV', ascending=False).head(10).reset_index(drop=True)
-            
-            # Use native dataframe single-row selection for 100% reliable clicks on mobile and PC
-            event_h1 = st.dataframe(
-                top_max_ev[['Batter', 'Max_EV', 'Avg_EV']].rename(columns={'Batter': 'Hitter', 'Max_EV': 'Max EV', 'Avg_EV': 'Avg EV'}),
-                use_container_width=True,
-                hide_index=True,
-                selection_mode="single-row",
-                on_select="rerun",
-                key="df_top_max_ev"
-            )
-            if event_h1 and event_h1.selection and event_h1.selection.rows:
-                selected_row_idx = event_h1.selection.rows[0]
-                clicked_player = top_max_ev.iloc[selected_row_idx]['Batter']
-                st.session_state["selected_player"] = clicked_player
-                st.session_state["nav_view"] = "🔥 Hitter Cards"
-                st.rerun()
+            render_clickable_leaderboard(top_max_ev, 'Batter', 'mph', 'Max_EV', 'avg', 'Avg_EV', 'Hitter', 'h_max_ev')
 
             st.write("")
             st.markdown("#### 🎯 **Top 10 Hard-Hit % (90+ mph, min 5 BIP)**")
             top_hh = hitter_agg[hitter_agg['BIP'] >= 5].sort_values(by='Hard_Hit_%', ascending=False).head(10).reset_index(drop=True)
-            event_hh = st.dataframe(
-                top_hh[['Batter', 'Hard_Hit_%', 'BIP']].rename(columns={'Batter': 'Hitter', 'Hard_Hit_%': 'Hard-Hit %', 'BIP': 'BIP'}),
-                use_container_width=True,
-                hide_index=True,
-                selection_mode="single-row",
-                on_select="rerun",
-                key="df_top_hh"
-            )
-            if event_hh and event_hh.selection and event_hh.selection.rows:
-                selected_row_idx = event_hh.selection.rows[0]
-                clicked_player = top_hh.iloc[selected_row_idx]['Batter']
-                st.session_state["selected_player"] = clicked_player
-                st.session_state["nav_view"] = "🔥 Hitter Cards"
-                st.rerun()
+            render_clickable_leaderboard(top_hh, 'Batter', '%', 'Hard_Hit_%', 'batted', 'BIP', 'Hitter', 'h_hh')
 
         with c_h2:
             st.markdown("#### ⚡ **Top 10 Average Exit Velocity (min 5 BIP)**")
             top_avg_ev = hitter_agg[hitter_agg['BIP'] >= 5].sort_values(by='Avg_EV', ascending=False).head(10).reset_index(drop=True)
-            event_avg_ev = st.dataframe(
-                top_avg_ev[['Batter', 'Avg_EV', 'Max_EV']].rename(columns={'Batter': 'Hitter', 'Avg_EV': 'Avg EV', 'Max_EV': 'Max EV'}),
-                use_container_width=True,
-                hide_index=True,
-                selection_mode="single-row",
-                on_select="rerun",
-                key="df_top_avg_ev"
-            )
-            if event_avg_ev and event_avg_ev.selection and event_avg_ev.selection.rows:
-                selected_row_idx = event_avg_ev.selection.rows[0]
-                clicked_player = top_avg_ev.iloc[selected_row_idx]['Batter']
-                st.session_state["selected_player"] = clicked_player
-                st.session_state["nav_view"] = "🔥 Hitter Cards"
-                st.rerun()
+            render_clickable_leaderboard(top_avg_ev, 'Batter', 'mph', 'Avg_EV', 'max', 'Max_EV', 'Hitter', 'h_avg_ev')
 
             st.write("")
             st.markdown("#### 📐 **Top 10 Sweet-Spot % (8°-32° LA, min 5 BIP)**")
             top_sw = hitter_agg[hitter_agg['BIP'] >= 5].sort_values(by='Sweet_Spot_%', ascending=False).head(10).reset_index(drop=True)
-            event_sw = st.dataframe(
-                top_sw[['Batter', 'Sweet_Spot_%', 'BIP']].rename(columns={'Batter': 'Hitter', 'Sweet_Spot_%': 'Sweet-Spot %', 'BIP': 'BIP'}),
-                use_container_width=True,
-                hide_index=True,
-                selection_mode="single-row",
-                on_select="rerun",
-                key="df_top_sw"
-            )
-            if event_sw and event_sw.selection and event_sw.selection.rows:
-                selected_row_idx = event_sw.selection.rows[0]
-                clicked_player = top_sw.iloc[selected_row_idx]['Batter']
-                st.session_state["selected_player"] = clicked_player
-                st.session_state["nav_view"] = "🔥 Hitter Cards"
-                st.rerun()
+            render_clickable_leaderboard(top_sw, 'Batter', '%', 'Sweet_Spot_%', 'max', 'Max_EV', 'Hitter', 'h_sw')
 
     with lb_tab_pitch:
         pitchers_all = season_data[season_data['Pitcher'].notna() & (season_data['Pitcher'] != '')]
@@ -619,74 +596,22 @@ if st.session_state["nav_view"] == "🏆 Leaderboard Hub":
         with c_p1:
             st.markdown("#### 🔥 **Top 10 Peak Fastball Velocity**")
             top_fb = p_fb_agg.sort_values(by='Max_FB', ascending=False).head(10).reset_index(drop=True)
-            event_p_fb = st.dataframe(
-                top_fb[['Pitcher', 'Max_FB', 'Avg_FB']].rename(columns={'Pitcher': 'Pitcher', 'Max_FB': 'Max Velo', 'Avg_FB': 'Avg Velo'}),
-                use_container_width=True,
-                hide_index=True,
-                selection_mode="single-row",
-                on_select="rerun",
-                key="df_top_fb"
-            )
-            if event_p_fb and event_p_fb.selection and event_p_fb.selection.rows:
-                selected_row_idx = event_p_fb.selection.rows[0]
-                clicked_player = top_fb.iloc[selected_row_idx]['Pitcher']
-                st.session_state["selected_player"] = clicked_player
-                st.session_state["nav_view"] = "🛡️ Pitcher Cards"
-                st.rerun()
+            render_clickable_leaderboard(top_fb, 'Pitcher', 'mph', 'Max_FB', 'avg', 'Avg_FB', 'Pitcher', 'p_top_fb')
 
             st.write("")
             st.markdown("#### 🎯 **Top 10 Strike Throwing % (min 30 Pitches)**")
             top_strikes = p_control_agg[p_control_agg['Total_Pitches'] >= 30].sort_values(by='Strike_%', ascending=False).head(10).reset_index(drop=True)
-            event_p_str = st.dataframe(
-                top_strikes[['Pitcher', 'Strike_%', 'Total_Pitches']].rename(columns={'Pitcher': 'Pitcher', 'Strike_%': 'Strike %', 'Total_Pitches': 'Pitches'}),
-                use_container_width=True,
-                hide_index=True,
-                selection_mode="single-row",
-                on_select="rerun",
-                key="df_top_strikes"
-            )
-            if event_p_str and event_p_str.selection and event_p_str.selection.rows:
-                selected_row_idx = event_p_str.selection.rows[0]
-                clicked_player = top_strikes.iloc[selected_row_idx]['Pitcher']
-                st.session_state["selected_player"] = clicked_player
-                st.session_state["nav_view"] = "🛡️ Pitcher Cards"
-                st.rerun()
+            render_clickable_leaderboard(top_strikes, 'Pitcher', '%', 'Strike_%', 'pitches', 'Total_Pitches', 'Pitcher', 'p_top_strikes')
 
         with c_p2:
             st.markdown("#### 🌪️ **Top 10 Fastball Ride / IVB (min 15 Fastballs)**")
             top_ivb = p_fb_agg[p_fb_agg['FB_Pitches'] >= 15].sort_values(by='Avg_IVB', ascending=False).head(10).reset_index(drop=True)
-            event_p_ivb = st.dataframe(
-                top_ivb[['Pitcher', 'Avg_IVB', 'Avg_FB']].rename(columns={'Pitcher': 'Pitcher', 'Avg_IVB': 'Avg IVB (in)', 'Avg_FB': 'Avg FB'}),
-                use_container_width=True,
-                hide_index=True,
-                selection_mode="single-row",
-                on_select="rerun",
-                key="df_top_ivb"
-            )
-            if event_p_ivb and event_p_ivb.selection and event_p_ivb.selection.rows:
-                selected_row_idx = event_p_ivb.selection.rows[0]
-                clicked_player = top_ivb.iloc[selected_row_idx]['Pitcher']
-                st.session_state["selected_player"] = clicked_player
-                st.session_state["nav_view"] = "🛡️ Pitcher Cards"
-                st.rerun()
+            render_clickable_leaderboard(top_ivb, 'Pitcher', 'in', 'Avg_IVB', 'mph', 'Avg_FB', 'Pitcher', 'p_top_ivb')
 
             st.write("")
             st.markdown("#### 🥊 **Top 10 First-Pitch Strike % (min 10 PAs)**")
             top_fps = p_control_agg[p_control_agg['FP_Total'] >= 10].sort_values(by='FP_Strike_%', ascending=False).head(10).reset_index(drop=True)
-            event_p_fps = st.dataframe(
-                top_fps[['Pitcher', 'FP_Strike_%', 'FP_Total']].rename(columns={'Pitcher': 'Pitcher', 'FP_Strike_%': 'FPS %', 'FP_Total': 'PA'}),
-                use_container_width=True,
-                hide_index=True,
-                selection_mode="single-row",
-                on_select="rerun",
-                key="df_top_fps"
-            )
-            if event_p_fps and event_p_fps.selection and event_p_fps.selection.rows:
-                selected_row_idx = event_p_fps.selection.rows[0]
-                clicked_player = top_fps.iloc[selected_row_idx]['Pitcher']
-                st.session_state["selected_player"] = clicked_player
-                st.session_state["nav_view"] = "🛡️ Pitcher Cards"
-                st.rerun()
+            render_clickable_leaderboard(top_fps, 'Pitcher', '%', 'FP_Strike_%', 'faced', 'FP_Total', 'Pitcher', 'p_top_fps')
 
 # =====================================================================
 # VIEW 2: INDIVIDUAL HITTER REPORT CARD
