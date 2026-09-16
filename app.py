@@ -15,6 +15,14 @@ st.set_page_config(
 
 MANIFEST_SHEET_ID = "1Xc3lx4ybIfp9R14ROhCWOD1RpnKIhbNYU76dYQUZdow"
 
+# Initialize session state for persistent drilldown routing
+if "view_mode" not in st.session_state:
+    st.session_state.view_mode = "🏆 League Leaderboard Hub"
+if "selected_player" not in st.session_state:
+    st.session_state.selected_player = None
+if "player_type" not in st.session_state:
+    st.session_state.player_type = None
+
 def fetch_single_csv(args):
     file_id, game_name, season_year = args
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
@@ -68,7 +76,6 @@ def load_marshalls_telemetry(sheet_id):
     return pd.DataFrame()
 
 def render_strike_zone_figure(df_pitches):
-    """Draws a professional catcher-view strike zone with 9 inner quadrants and home plate."""
     fig = go.Figure()
     non_contact = df_pitches[df_pitches['ExitSpeed'].isna() | (df_pitches['ExitSpeed'] < 40)]
     for ptype, group in non_contact.groupby('TaggedPitchType'):
@@ -122,29 +129,21 @@ def render_strike_zone_figure(df_pitches):
     return fig
 
 def render_field_spray_chart(batted_df):
-    """Draws a true baseball diamond field spray chart from TrackMan direction & distance."""
     fig = go.Figure()
-
-    # Field Outline Lines
-    # Foul lines (330 ft to LF and RF corners: -45 deg and +45 deg)
     rad_lf = np.radians(135)
     rad_rf = np.radians(45)
     lf_x, lf_y = 330 * np.cos(rad_lf), 330 * np.sin(rad_lf)
     rf_x, rf_y = 330 * np.cos(rad_rf), 330 * np.sin(rad_rf)
 
-    # Left & Right Foul Lines
     fig.add_trace(go.Scatter(x=[0, lf_x], y=[0, lf_y], mode='lines', line=dict(color="rgba(255,255,255,0.6)", width=2), showlegend=False, hoverinfo='skip'))
     fig.add_trace(go.Scatter(x=[0, rf_x], y=[0, rf_y], mode='lines', line=dict(color="rgba(255,255,255,0.6)", width=2), showlegend=False, hoverinfo='skip'))
 
-    # Outfield Wall Arc (~400 ft to dead center, 330 ft corners)
     angles = np.linspace(45, 135, 60)
-    # Scaled arc radius: 330 at corners, 400 in dead center
     radii = 330 + 70 * np.sin(np.radians(angles - 45) * 2)
     arc_x = radii * np.cos(np.radians(angles))
     arc_y = radii * np.sin(np.radians(angles))
     fig.add_trace(go.Scatter(x=arc_x, y=arc_y, mode='lines', line=dict(color="rgba(255,255,255,0.7)", width=3), showlegend=False, hoverinfo='skip'))
 
-    # Infield Diamond (90 ft bases: 1B, 2B, 3B, Home)
     b1_x, b1_y = 90 * np.cos(np.radians(45)), 90 * np.sin(np.radians(45))
     b2_x, b2_y = 0, 127.28
     b3_x, b3_y = 90 * np.cos(np.radians(135)), 90 * np.sin(np.radians(135))
@@ -155,13 +154,9 @@ def render_field_spray_chart(batted_df):
         showlegend=False, hoverinfo='skip'
     ))
 
-    # Convert TrackMan Direction and Distance to Cartesian X, Y
-    # TrackMan Direction: 0 deg = dead center, negative = left, positive = right
     if not batted_df.empty and 'Direction' in batted_df.columns and 'Distance' in batted_df.columns:
         valid_bip = batted_df[batted_df['Distance'].notna() & (batted_df['Distance'] > 15)].copy()
-        
         if not valid_bip.empty:
-            # Convert TrackMan bearing (0 = Center Field / 90 deg Cartesian)
             theta_rad = np.radians(90 - valid_bip['Direction'])
             valid_bip['Field_X'] = valid_bip['Distance'] * np.cos(theta_rad)
             valid_bip['Field_Y'] = valid_bip['Distance'] * np.sin(theta_rad)
@@ -213,23 +208,38 @@ if data.empty:
 # ----------------- SIDEBAR CONTROLS -----------------
 st.sidebar.header("🎯 Navigation & Controls")
 
-report_scope = st.sidebar.radio("Navigation View", [
+report_options = [
     "🏆 League Leaderboard Hub",
     "🔥 Individual Hitter Card",
     "🛡️ Individual Pitcher Card",
     "📊 Team Game Summary"
-])
+]
+
+report_scope = st.sidebar.radio(
+    "Navigation View",
+    report_options,
+    index=report_options.index(st.session_state.view_mode) if st.session_state.view_mode in report_options else 0,
+    key="nav_radio"
+)
+st.session_state.view_mode = report_scope
 
 available_years = sorted(data['Season_Year'].dropna().unique())
 selected_year = st.sidebar.selectbox("Season Year", options=available_years, index=0)
 season_data = data[data['Season_Year'] == selected_year]
 
+# Helper to route when player row is clicked
+def navigate_to_player(player_name, p_type):
+    st.session_state.selected_player = player_name
+    st.session_state.player_type = p_type
+    st.session_state.view_mode = "🔥 Individual Hitter Card" if p_type == "Hitter" else "🛡️ Individual Pitcher Card"
+    st.rerun()
+
 # =====================================================================
-# VIEW 1: LEAGUE LEADERBOARD HUB
+# VIEW 1: LEAGUE LEADERBOARD HUB (INTERACTIVE CLICK-TO-VIEW)
 # =====================================================================
-if report_scope == "🏆 League Leaderboard Hub":
+if st.session_state.view_mode == "🏆 League Leaderboard Hub":
     st.subheader(f"🏆 Marshalls League Official Leaderboard ({selected_year})")
-    st.caption("Top 10 rankings across essential pro-scouting metrics (Minimum qualifying thresholds applied)")
+    st.caption("👉 **Interactive Scouting:** Click any row on the leaderboards below to immediately load that player's full-year development profile.")
 
     lb_tab_hit, lb_tab_pitch = st.tabs(["💥 Hitting Leaderboards", "🎯 Pitching Leaderboards"])
 
@@ -254,29 +264,73 @@ if report_scope == "🏆 League Leaderboard Hub":
 
         with c_h1:
             st.markdown("#### 🚀 **Top 10 Max Exit Velocity (Raw Power)**")
-            top_max_ev = hitter_agg.sort_values(by='Max_EV', ascending=False).head(10)[['Batter', 'Max_EV', 'Avg_EV', 'BIP']]
+            top_max_ev = hitter_agg.sort_values(by='Max_EV', ascending=False).head(10)[['Batter', 'Max_EV', 'Avg_EV', 'BIP']].reset_index(drop=True)
             top_max_ev.columns = ['Hitter', 'Max EV (mph)', 'Avg EV (mph)', 'Batted Balls']
-            top_max_ev.index = range(1, len(top_max_ev) + 1)
-            st.dataframe(top_max_ev, use_container_width=True)
+            
+            sel1 = st.dataframe(
+                top_max_ev,
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="df_top_max_ev"
+            )
+            if sel1.selection and sel1.selection.rows:
+                row_idx = sel1.selection.rows[0]
+                clicked_hitter = top_max_ev.iloc[row_idx]['Hitter']
+                navigate_to_player(clicked_hitter, "Hitter")
 
             st.markdown("#### 🎯 **Top 10 Hard-Hit % (90+ mph, min 5 BIP)**")
-            top_hh = hitter_agg[hitter_agg['BIP'] >= 5].sort_values(by='Hard_Hit_%', ascending=False).head(10)[['Batter', 'Hard_Hit_%', 'Hard_Hits', 'BIP']]
+            top_hh = hitter_agg[hitter_agg['BIP'] >= 5].sort_values(by='Hard_Hit_%', ascending=False).head(10)[['Batter', 'Hard_Hit_%', 'Hard_Hits', 'BIP']].reset_index(drop=True)
             top_hh.columns = ['Hitter', 'Hard-Hit %', 'Hard Hits (90+)', 'Batted Balls']
-            top_hh.index = range(1, len(top_hh) + 1)
-            st.dataframe(top_hh, use_container_width=True)
+            
+            sel2 = st.dataframe(
+                top_hh,
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="df_top_hh"
+            )
+            if sel2.selection and sel2.selection.rows:
+                row_idx = sel2.selection.rows[0]
+                clicked_hitter = top_hh.iloc[row_idx]['Hitter']
+                navigate_to_player(clicked_hitter, "Hitter")
 
         with c_h2:
             st.markdown("#### ⚡ **Top 10 Average Exit Velocity (min 5 BIP)**")
-            top_avg_ev = hitter_agg[hitter_agg['BIP'] >= 5].sort_values(by='Avg_EV', ascending=False).head(10)[['Batter', 'Avg_EV', 'Max_EV', 'BIP']]
+            top_avg_ev = hitter_agg[hitter_agg['BIP'] >= 5].sort_values(by='Avg_EV', ascending=False).head(10)[['Batter', 'Avg_EV', 'Max_EV', 'BIP']].reset_index(drop=True)
             top_avg_ev.columns = ['Hitter', 'Avg EV (mph)', 'Max EV (mph)', 'Batted Balls']
-            top_avg_ev.index = range(1, len(top_avg_ev) + 1)
-            st.dataframe(top_avg_ev, use_container_width=True)
+            
+            sel3 = st.dataframe(
+                top_avg_ev,
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="df_top_avg_ev"
+            )
+            if sel3.selection and sel3.selection.rows:
+                row_idx = sel3.selection.rows[0]
+                clicked_hitter = top_avg_ev.iloc[row_idx]['Hitter']
+                navigate_to_player(clicked_hitter, "Hitter")
 
             st.markdown("#### 📐 **Top 10 Sweet-Spot % (8°-32° LA, min 5 BIP)**")
-            top_sw = hitter_agg[hitter_agg['BIP'] >= 5].sort_values(by='Sweet_Spot_%', ascending=False).head(10)[['Batter', 'Sweet_Spot_%', 'BIP', 'Max_EV']]
+            top_sw = hitter_agg[hitter_agg['BIP'] >= 5].sort_values(by='Sweet_Spot_%', ascending=False).head(10)[['Batter', 'Sweet_Spot_%', 'BIP', 'Max_EV']].reset_index(drop=True)
             top_sw.columns = ['Hitter', 'Sweet-Spot %', 'Batted Balls', 'Max EV (mph)']
-            top_sw.index = range(1, len(top_sw) + 1)
-            st.dataframe(top_sw, use_container_width=True)
+            
+            sel4 = st.dataframe(
+                top_sw,
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="df_top_sw"
+            )
+            if sel4.selection and sel4.selection.rows:
+                row_idx = sel4.selection.rows[0]
+                clicked_hitter = top_sw.iloc[row_idx]['Hitter']
+                navigate_to_player(clicked_hitter, "Hitter")
 
     with lb_tab_pitch:
         pitchers_all = season_data[season_data['Pitcher'].notna() & (season_data['Pitcher'] != '')]
@@ -309,45 +363,103 @@ if report_scope == "🏆 League Leaderboard Hub":
 
         with c_p1:
             st.markdown("#### 🔥 **Top 10 Peak Fastball Velocity**")
-            top_fb = p_fb_agg.sort_values(by='Max_FB', ascending=False).head(10)[['Pitcher', 'Max_FB', 'Avg_FB', 'FB_Pitches']]
+            top_fb = p_fb_agg.sort_values(by='Max_FB', ascending=False).head(10)[['Pitcher', 'Max_FB', 'Avg_FB', 'FB_Pitches']].reset_index(drop=True)
             top_fb.columns = ['Pitcher', 'Max FB (mph)', 'Avg FB (mph)', 'Pitches']
-            top_fb.index = range(1, len(top_fb) + 1)
-            st.dataframe(top_fb, use_container_width=True)
+            
+            sel_p1 = st.dataframe(
+                top_fb,
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="df_top_fb"
+            )
+            if sel_p1.selection and sel_p1.selection.rows:
+                row_idx = sel_p1.selection.rows[0]
+                clicked_pitcher = top_fb.iloc[row_idx]['Pitcher']
+                navigate_to_player(clicked_pitcher, "Pitcher")
 
             st.markdown("#### 🎯 **Top 10 Strike Throwing % (min 30 Pitches)**")
-            top_strikes = p_control_agg[p_control_agg['Total_Pitches'] >= 30].sort_values(by='Strike_%', ascending=False).head(10)[['Pitcher', 'Strike_%', 'Total_Pitches']]
+            top_strikes = p_control_agg[p_control_agg['Total_Pitches'] >= 30].sort_values(by='Strike_%', ascending=False).head(10)[['Pitcher', 'Strike_%', 'Total_Pitches']].reset_index(drop=True)
             top_strikes.columns = ['Pitcher', 'Strike %', 'Total Pitches']
-            top_strikes.index = range(1, len(top_strikes) + 1)
-            st.dataframe(top_strikes, use_container_width=True)
+            
+            sel_p2 = st.dataframe(
+                top_strikes,
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="df_top_strikes"
+            )
+            if sel_p2.selection and sel_p2.selection.rows:
+                row_idx = sel_p2.selection.rows[0]
+                clicked_pitcher = top_strikes.iloc[row_idx]['Pitcher']
+                navigate_to_player(clicked_pitcher, "Pitcher")
 
         with c_p2:
             st.markdown("#### 🌪️ **Top 10 Fastball Ride / IVB (min 15 Fastballs)**")
-            top_ivb = p_fb_agg[p_fb_agg['FB_Pitches'] >= 15].sort_values(by='Avg_IVB', ascending=False).head(10)[['Pitcher', 'Avg_IVB', 'Avg_FB', 'Avg_Spin']]
+            top_ivb = p_fb_agg[p_fb_agg['FB_Pitches'] >= 15].sort_values(by='Avg_IVB', ascending=False).head(10)[['Pitcher', 'Avg_IVB', 'Avg_FB', 'Avg_Spin']].reset_index(drop=True)
             top_ivb.columns = ['Pitcher', 'Avg IVB (in)', 'Avg FB (mph)', 'Avg Spin (rpm)']
-            top_ivb.index = range(1, len(top_ivb) + 1)
-            st.dataframe(top_ivb, use_container_width=True)
+            
+            sel_p3 = st.dataframe(
+                top_ivb,
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="df_top_ivb"
+            )
+            if sel_p3.selection and sel_p3.selection.rows:
+                row_idx = sel_p3.selection.rows[0]
+                clicked_pitcher = top_ivb.iloc[row_idx]['Pitcher']
+                navigate_to_player(clicked_pitcher, "Pitcher")
 
             st.markdown("#### 🥊 **Top 10 First-Pitch Strike % (min 10 PAs)**")
-            top_fps = p_control_agg[p_control_agg['FP_Total'] >= 10].sort_values(by='FP_Strike_%', ascending=False).head(10)[['Pitcher', 'FP_Strike_%', 'FP_Total']]
+            top_fps = p_control_agg[p_control_agg['FP_Total'] >= 10].sort_values(by='FP_Strike_%', ascending=False).head(10)[['Pitcher', 'FP_Strike_%', 'FP_Total']].reset_index(drop=True)
             top_fps.columns = ['Pitcher', 'FP Strike %', 'Batters Faced']
-            top_fps.index = range(1, len(top_fps) + 1)
-            st.dataframe(top_fps, use_container_width=True)
+            
+            sel_p4 = st.dataframe(
+                top_fps,
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="df_top_fps"
+            )
+            if sel_p4.selection and sel_p4.selection.rows:
+                row_idx = sel_p4.selection.rows[0]
+                clicked_pitcher = top_fps.iloc[row_idx]['Pitcher']
+                navigate_to_player(clicked_pitcher, "Pitcher")
 
 # =====================================================================
-# VIEW 2: INDIVIDUAL HITTER REPORT CARD (WITH SPRAY CHART)
+# VIEW 2: INDIVIDUAL HITTER REPORT CARD
 # =====================================================================
-elif report_scope == "🔥 Individual Hitter Card":
-    games = ["All Games (Season Cumulative)"] + sorted([g for g in season_data['Game_Source'].dropna().unique()])
-    selected_game = st.sidebar.selectbox("Game Select", options=games)
-    active_data = season_data[season_data['Game_Source'] == selected_game] if selected_game != "All Games (Season Cumulative)" else season_data
+elif st.session_state.view_mode == "🔥 Individual Hitter Card":
+    # Back to Leaderboard Shortcut Button
+    if st.button("⬅️ Back to League Leaderboard"):
+        st.session_state.view_mode = "🏆 League Leaderboard Hub"
+        st.rerun()
 
-    batters = sorted([b for b in active_data['Batter'].dropna().unique() if str(b).strip()])
+    batters = sorted([b for b in season_data['Batter'].dropna().unique() if str(b).strip()])
     if not batters:
         st.warning("No hitter data tracked for this selection.")
         st.stop()
 
-    selected_batter = st.sidebar.selectbox("Select Batter", options=batters)
-    b_data = active_data[active_data['Batter'] == selected_batter].copy()
+    # Pre-select player if clicked from leaderboard
+    default_batter_idx = 0
+    if st.session_state.selected_player in batters:
+        default_batter_idx = batters.index(st.session_state.selected_player)
+
+    selected_batter = st.sidebar.selectbox("Select Batter", options=batters, index=default_batter_idx)
+    st.session_state.selected_player = selected_batter
+
+    # Game Filter (Defaulted to Full Year)
+    player_games = ["All Games (Season Cumulative)"] + sorted([g for g in season_data[season_data['Batter'] == selected_batter]['Game_Source'].dropna().unique()])
+    selected_game = st.sidebar.selectbox("Game Filter", options=player_games, index=0)
+    
+    b_data = season_data[season_data['Batter'] == selected_batter].copy()
+    if selected_game != "All Games (Season Cumulative)":
+        b_data = b_data[b_data['Game_Source'] == selected_game]
 
     total_pitches = len(b_data)
     swings = len(b_data[b_data['PitchCall'].astype(str).str.contains("StrikeSwinging|Foul|InPlay", case=False, na=False)])
@@ -362,12 +474,12 @@ elif report_scope == "🔥 Individual Hitter Card":
     max_dist = in_play['Distance'].max() if 'Distance' in in_play.columns and in_play['Distance'].notna().any() else 0
 
     st.subheader(f"Hitter Postgame Report: **{selected_batter}**")
-    st.caption(f"Game: {selected_game} | Season: {selected_year}")
+    st.caption(f"Scope: {selected_game} | Season: {selected_year}")
 
     t1, t2 = st.columns(2)
     with t1:
         if max_ev >= 95:
-            st.success(f"**Barrel was loud:** 100+ exit velo recorded ({max_ev:.1f} mph). Pure line drive power.")
+            st.success(f"**Barrel was loud:** 100+ exit velo recorded ({max_ev:.1f} mph). Pure collegiate power.")
         elif avg_ev >= 88:
             st.success(f"**Consistent contact:** Solid contact quality averaging {avg_ev:.1f} mph off the bat.")
         else:
@@ -403,9 +515,9 @@ elif report_scope == "🔥 Individual Hitter Card":
 
     st.divider()
 
-    # ROW 2: AT-BAT SEQUENCING TIMELINE
+    # AT-BAT SEQUENCING TIMELINE
     st.markdown("#### **At-Bat Pitch Sequencing Timeline**")
-    st.caption("Chronological progression of every pitch seen in each plate appearance:")
+    st.caption("Chronological progression of pitches seen by this hitter:")
     sort_cols = [c for c in ['Inning', 'PAofInning', 'PitchofPA', 'Time'] if c in b_data.columns]
     b_sorted = b_data.sort_values(by=sort_cols).copy() if sort_cols else b_data.copy()
 
@@ -424,6 +536,7 @@ elif report_scope == "🔥 Individual Hitter Card":
         outcome = f"💥 In Play: {ev:.1f} mph, {la:.0f}° ({res if pd.notna(res) else 'Contact'})" if (pd.notna(ev) and ev >= 40) else call
 
         timeline_data.append({
+            "Game": r.get('Game_Source', '-'),
             "Inn": inn, "Pitch #": p_num, "Count": count_str,
             "Pitch Type": ptype, "Velo": velo, "Pitch Call / Outcome": outcome
         })
@@ -433,7 +546,7 @@ elif report_scope == "🔥 Individual Hitter Card":
 
     st.divider()
 
-    # ROW 3: COUNT SEQUENCING BREAKDOWN
+    # COUNT SEQUENCING BREAKDOWN
     st.markdown("#### **Count Sequencing — What Did The Opposition Throw You?**")
     def get_count_bucket(r):
         b = int(r.get('Balls', 0))
@@ -455,18 +568,29 @@ elif report_scope == "🔥 Individual Hitter Card":
 # =====================================================================
 # VIEW 3: INDIVIDUAL PITCHER REPORT CARD
 # =====================================================================
-elif report_scope == "🛡️ Individual Pitcher Card":
-    games = ["All Games (Season Cumulative)"] + sorted([g for g in season_data['Game_Source'].dropna().unique()])
-    selected_game = st.sidebar.selectbox("Game Select", options=games)
-    active_data = season_data[season_data['Game_Source'] == selected_game] if selected_game != "All Games (Season Cumulative)" else season_data
+elif st.session_state.view_mode == "🛡️ Individual Pitcher Card":
+    if st.button("⬅️ Back to League Leaderboard"):
+        st.session_state.view_mode = "🏆 League Leaderboard Hub"
+        st.rerun()
 
-    pitchers = sorted([p for p in active_data['Pitcher'].dropna().unique() if str(p).strip()])
+    pitchers = sorted([p for p in season_data['Pitcher'].dropna().unique() if str(p).strip()])
     if not pitchers:
         st.warning("No pitcher data tracked for this selection.")
         st.stop()
 
-    selected_pitcher = st.sidebar.selectbox("Select Pitcher", options=pitchers)
-    p_data = active_data[active_data['Pitcher'] == selected_pitcher].copy()
+    default_pitcher_idx = 0
+    if st.session_state.selected_player in pitchers:
+        default_pitcher_idx = pitchers.index(st.session_state.selected_player)
+
+    selected_pitcher = st.sidebar.selectbox("Select Pitcher", options=pitchers, index=default_pitcher_idx)
+    st.session_state.selected_player = selected_pitcher
+
+    pitcher_games = ["All Games (Season Cumulative)"] + sorted([g for g in season_data[season_data['Pitcher'] == selected_pitcher]['Game_Source'].dropna().unique()])
+    selected_game = st.sidebar.selectbox("Game Filter", options=pitcher_games, index=0)
+
+    p_data = season_data[season_data['Pitcher'] == selected_pitcher].copy()
+    if selected_game != "All Games (Season Cumulative)":
+        p_data = p_data[p_data['Game_Source'] == selected_game]
 
     total_p = len(p_data)
     strikes = len(p_data[p_data['PitchCall'].astype(str).str.contains("Strike|Foul|InPlay", case=False, na=False)])
@@ -481,7 +605,7 @@ elif report_scope == "🛡️ Individual Pitcher Card":
     max_fb = fb_df['RelSpeed'].max() if not fb_df.empty else 0
 
     st.subheader(f"Pitcher Postgame Report: **{selected_pitcher}**")
-    st.caption(f"Game: {selected_game} | Season: {selected_year}")
+    st.caption(f"Scope: {selected_game} | Season: {selected_year}")
 
     col_t1, col_t2 = st.columns(2)
     with col_t1:
