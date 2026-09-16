@@ -15,13 +15,11 @@ st.set_page_config(
 
 MANIFEST_SHEET_ID = "1Xc3lx4ybIfp9R14ROhCWOD1RpnKIhbNYU76dYQUZdow"
 
-# Initialize session state for persistent drilldown routing
-if "view_mode" not in st.session_state:
-    st.session_state.view_mode = "🏆 League Leaderboard Hub"
+# Session state initialization
+if "nav_radio" not in st.session_state:
+    st.session_state["nav_radio"] = "🏆 League Leaderboard Hub"
 if "selected_player" not in st.session_state:
-    st.session_state.selected_player = None
-if "player_type" not in st.session_state:
-    st.session_state.player_type = None
+    st.session_state["selected_player"] = None
 
 def fetch_single_csv(args):
     file_id, game_name, season_year = args
@@ -193,8 +191,13 @@ def render_field_spray_chart(batted_df):
     )
     return fig
 
+# Direct state update callback
+def select_player_callback(player_name, target_view):
+    st.session_state["selected_player"] = player_name
+    st.session_state["nav_radio"] = target_view
+
 def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, submetric_label, submetric_col, player_type, key_prefix):
-    """Renders a clean leaderboard card with clickable player names and no checkboxes."""
+    target_view = "🔥 Individual Hitter Card" if player_type == "Hitter" else "🛡️ Individual Pitcher Card"
     for idx, r in df_ranked.iterrows():
         p_name = str(r[name_col])
         m_val = r[metric_col]
@@ -203,12 +206,14 @@ def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, 
         c_rank, c_btn, c_stat = st.columns([0.6, 3.2, 2.2])
         c_rank.markdown(f"**#{idx+1}**")
         
-        # Clickable player button
-        if c_btn.button(f"{p_name}", key=f"{key_prefix}_{idx}_{p_name}", use_container_width=True):
-            st.session_state.selected_player = p_name
-            st.session_state.player_type = player_type
-            st.session_state.view_mode = "🔥 Individual Hitter Card" if player_type == "Hitter" else "🛡️ Individual Pitcher Card"
-            st.rerun()
+        # Click button calls the state update callback directly
+        c_btn.button(
+            f"{p_name}",
+            key=f"{key_prefix}_{idx}_{p_name}",
+            on_click=select_player_callback,
+            args=(p_name, target_view),
+            use_container_width=True
+        )
             
         c_stat.markdown(f"**{m_val}** {metric_label} <span style='color:gray; font-size:12px;'>({sub_val} {submetric_label})</span>", unsafe_allow_html=True)
 
@@ -233,24 +238,23 @@ report_options = [
     "📊 Team Game Summary"
 ]
 
+# Radio bound to session_state key
 report_scope = st.sidebar.radio(
     "Navigation View",
     report_options,
-    index=report_options.index(st.session_state.view_mode) if st.session_state.view_mode in report_options else 0,
     key="nav_radio"
 )
-st.session_state.view_mode = report_scope
 
 available_years = sorted(data['Season_Year'].dropna().unique())
 selected_year = st.sidebar.selectbox("Season Year", options=available_years, index=0)
 season_data = data[data['Season_Year'] == selected_year]
 
 # =====================================================================
-# VIEW 1: LEAGUE LEADERBOARD HUB (CLICKABLE CARDS - NO CHECKBOXES)
+# VIEW 1: LEAGUE LEADERBOARD HUB
 # =====================================================================
-if st.session_state.view_mode == "🏆 League Leaderboard Hub":
+if report_scope == "🏆 League Leaderboard Hub":
     st.subheader(f"🏆 Marshalls League Official Leaderboard ({selected_year})")
-    st.caption("Click directly on any player's name to immediately open their full-season scouting card.")
+    st.caption("Click directly on any player's name button to immediately open their full-season scouting card.")
 
     lb_tab_hit, lb_tab_pitch = st.tabs(["💥 Hitting Leaderboards", "🎯 Pitching Leaderboards"])
 
@@ -345,9 +349,9 @@ if st.session_state.view_mode == "🏆 League Leaderboard Hub":
 # =====================================================================
 # VIEW 2: INDIVIDUAL HITTER REPORT CARD
 # =====================================================================
-elif st.session_state.view_mode == "🔥 Individual Hitter Card":
+elif report_scope == "🔥 Individual Hitter Card":
     if st.button("⬅️ Back to League Leaderboard"):
-        st.session_state.view_mode = "🏆 League Leaderboard Hub"
+        st.session_state["nav_radio"] = "🏆 League Leaderboard Hub"
         st.rerun()
 
     batters = sorted([b for b in season_data['Batter'].dropna().unique() if str(b).strip()])
@@ -356,11 +360,11 @@ elif st.session_state.view_mode == "🔥 Individual Hitter Card":
         st.stop()
 
     default_batter_idx = 0
-    if st.session_state.selected_player in batters:
-        default_batter_idx = batters.index(st.session_state.selected_player)
+    if st.session_state.get("selected_player") in batters:
+        default_batter_idx = batters.index(st.session_state["selected_player"])
 
     selected_batter = st.sidebar.selectbox("Select Batter", options=batters, index=default_batter_idx)
-    st.session_state.selected_player = selected_batter
+    st.session_state["selected_player"] = selected_batter
 
     player_games = ["All Games (Season Cumulative)"] + sorted([g for g in season_data[season_data['Batter'] == selected_batter]['Game_Source'].dropna().unique()])
     selected_game = st.sidebar.selectbox("Game Filter", options=player_games, index=0)
@@ -472,9 +476,9 @@ elif st.session_state.view_mode == "🔥 Individual Hitter Card":
 # =====================================================================
 # VIEW 3: INDIVIDUAL PITCHER REPORT CARD
 # =====================================================================
-elif st.session_state.view_mode == "🛡️ Individual Pitcher Card":
+elif report_scope == "🛡️ Individual Pitcher Card":
     if st.button("⬅️ Back to League Leaderboard"):
-        st.session_state.view_mode = "🏆 League Leaderboard Hub"
+        st.session_state["nav_radio"] = "🏆 League Leaderboard Hub"
         st.rerun()
 
     pitchers = sorted([p for p in season_data['Pitcher'].dropna().unique() if str(p).strip()])
@@ -483,11 +487,11 @@ elif st.session_state.view_mode == "🛡️ Individual Pitcher Card":
         st.stop()
 
     default_pitcher_idx = 0
-    if st.session_state.selected_player in pitchers:
-        default_pitcher_idx = pitchers.index(st.session_state.selected_player)
+    if st.session_state.get("selected_player") in pitchers:
+        default_pitcher_idx = pitchers.index(st.session_state["selected_player"])
 
     selected_pitcher = st.sidebar.selectbox("Select Pitcher", options=pitchers, index=default_pitcher_idx)
-    st.session_state.selected_player = selected_pitcher
+    st.session_state["selected_player"] = selected_pitcher
 
     pitcher_games = ["All Games (Season Cumulative)"] + sorted([g for g in season_data[season_data['Pitcher'] == selected_pitcher]['Game_Source'].dropna().unique()])
     selected_game = st.sidebar.selectbox("Game Filter", options=pitcher_games, index=0)
