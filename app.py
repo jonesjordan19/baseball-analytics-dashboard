@@ -673,7 +673,6 @@ else:
     else:
         team_a, team_b = "Anchors", "Opponent"
 
-    # Inning assignment: Top = Away (Team A), Bottom = Home (Team B)
     if 'Top/Bottom' in game_df.columns and game_df['Top/Bottom'].dropna().nunique() >= 2:
         t1_bat = game_df[game_df['Top/Bottom'].astype(str).str.lower().str.startswith('top')]
         t2_bat = game_df[game_df['Top/Bottom'].astype(str).str.lower().str.startswith('bot')]
@@ -816,11 +815,11 @@ else:
 
         st.divider()
 
-        # Drilldown to specific player card in this game
         hitter_list = sorted([b for b in t_bat['Batter'].dropna().unique() if str(b).strip()])
         if hitter_list:
-            st.markdown(f"#### 🔍 **Inspect {current_team_name} Hitter Game Card**")
-            sel_h = st.selectbox(f"Select {current_team_name} Hitter", options=hitter_list, key=f"sel_h_{current_team_name}")
+            st.markdown(f"#### 👤 **Viewing Hitter Scouting Profile — {current_team_name}**")
+            st.caption("Select any batter below to review their in-game strike zone and field spray chart:")
+            sel_h = st.selectbox("Choose Batter to View:", options=hitter_list, key=f"sel_h_{current_team_name}")
             sh_data = t_bat[t_bat['Batter'] == sel_h].copy()
             sh_in_play = sh_data[sh_data['ExitSpeed'].notna() & (sh_data['ExitSpeed'] >= 40)]
 
@@ -853,8 +852,9 @@ else:
 
         pitcher_list = sorted([p for p in t_pit_enr['Pitcher'].dropna().unique() if str(p).strip()])
         if pitcher_list:
-            st.markdown(f"#### 🔍 **Inspect {current_team_name} Pitcher Game Card**")
-            sel_p = st.selectbox(f"Select {current_team_name} Pitcher", options=pitcher_list, key=f"sel_p_{current_team_name}")
+            st.markdown(f"#### ⚾ **Viewing Pitcher Scouting Profile — {current_team_name}**")
+            st.caption("Select any arm below to review their pitch movement profile and pitch location:")
+            sel_p = st.selectbox("Choose Pitcher to View:", options=pitcher_list, key=f"sel_p_{current_team_name}")
             sp_data = t_pit_enr[t_pit_enr['Pitcher'] == sel_p].copy()
 
             cp_m, cp_z = st.columns(2)
