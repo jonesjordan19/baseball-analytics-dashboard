@@ -11,7 +11,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Registry of files in the Google Drive folder
+# Registry of 2026 season games in Drive folder
 GAME_FILES = [
     {"id": "1oychbUr3bienpfyRq-oa7jerfCfAkI0P", "name": "7-28-2026_04-08PM_Anchors 2026 x Red Hots 2026.csv"},
     {"id": "1QPFkec3o2HKK_64F-2cRwzucpOZByfpT", "name": "7-27-2026_08-05PM_Royals 2026 x Red Hots 2026.csv"},
@@ -40,16 +40,37 @@ GAME_FILES = [
     {"id": "1V-W408aXAK1LaYHZeHcRTKUpgrbGoxkA", "name": "7-14-2026_12-48PM_Red Hots 2026 x Mexico.csv"}
 ]
 
+def download_drive_file(file_id):
+    """Downloads public Google Drive CSV bypassing the warning page."""
+    session = requests.Session()
+    url = "https://docs.google.com/uc?export=download"
+    response = session.get(url, params={'id': file_id}, stream=True)
+    
+    # Check for confirmation token if Drive flags the file
+    for k, v in response.cookies.items():
+        if k.startswith('download_warning'):
+            response = session.get(url, params={'id': file_id, 'confirm': v}, stream=True)
+            break
+            
+    content = response.content
+    # Validate content is actually CSV and not an HTML error
+    if b"<html" in content[:100].lower():
+        return None
+    return content
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_all_game_telemetry():
     frames = []
-    for item in GAME_FILES:
-        url = f"https://drive.google.com/uc?export=download&id={item['id']}"
-        try:
-            res = requests.get(url)
-            if res.status_code == 200:
-                df = pd.read_csv(io.StringIO(res.content.decode('utf-8', errors='ignore')), low_memory=False)
-                if df.empty:
+    progress_bar = st.progress(0, text="Fetching season game data...")
+    total = len(GAME_FILES)
+    
+    for idx, item in enumerate(GAME_FILES):
+        progress_bar.progress((idx + 1) / total, text=f"Loading {item['name']}...")
+        content = download_drive_file(item['id'])
+        if content:
+            try:
+                df = pd.read_csv(io.BytesIO(content), low_memory=False)
+                if df.empty or 'TaggedPitchType' not in df.columns:
                     continue
 
                 # Multi-season year determination
@@ -62,16 +83,17 @@ def load_all_game_telemetry():
 
                 df['Game_Source'] = item['name']
 
-                # Filter tracking noise
+                # Filter tracking artifacts
                 if 'RelSpeed' in df.columns:
                     df = df[(df['RelSpeed'] >= 35.0) & (df['RelSpeed'] <= 106.0)]
                 if 'isOutlier' in df.columns:
                     df = df[df['isOutlier'] != True]
 
                 frames.append(df)
-        except Exception:
-            continue
-
+            except Exception:
+                continue
+                
+    progress_bar.empty()
     if frames:
         return pd.concat(frames, ignore_index=True)
     return pd.DataFrame()
@@ -80,11 +102,10 @@ def load_all_game_telemetry():
 st.title("⚡ Marshalls League Data Engine")
 st.markdown("##### **Created by Jordan Jones** | *Next-Gen Ball Flight Kinematics & Player Development System*")
 
-with st.spinner("Streaming TrackMan & WIN Reality telemetry..."):
-    data = load_all_game_telemetry()
+data = load_all_game_telemetry()
 
 if data.empty:
-    st.error("No telemetry data could be loaded. Please ensure internet access is reachable.")
+    st.error("No telemetry data could be downloaded. The Drive link permissions may need to be confirmed.")
     st.stop()
 
 # ----------------- SIDEBAR CONTROLS -----------------
@@ -190,3 +211,7 @@ with tab_kinematic:
                 template="plotly_dark"
             )
             st.plotly_chart(fig_kin, use_container_width=True)
+        else:
+            st.info("No biomechanical sensor events recorded for this selection.")
+    else:
+        st.info("Kinetic metrics not found in this dataset.")
