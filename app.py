@@ -18,41 +18,33 @@ SEASONS = {
 }
 
 def get_folder_csv_list(folder_id):
-    """Scrapes public Google Drive folder page to dynamically discover all CSV files."""
+    """Discovers CSV files from public Drive folder HTML."""
     url = f"https://drive.google.com/drive/folders/{folder_id}"
-    headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        r = requests.get(url, headers=headers, timeout=15)
-        # Regex extracts [id, [filename.csv]] from Drive embedded payload
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=6)
         matches = re.findall(r'\["([a-zA-Z0-9_-]{28,45})",\["([^"]+\.csv)"', r.text)
         return list(set(matches))
     except Exception:
         return []
 
 def download_csv(file_id):
-    """Pulls CSV binary stream directly bypassing virus scan checkpoints."""
-    session = requests.Session()
-    url = "https://docs.google.com/uc?export=download"
+    """Pulls individual CSV content quickly with a strict timeout."""
+    url = f"https://drive.google.com/uc?export=download&id={file_id}"
     try:
-        res = session.get(url, params={'id': file_id}, stream=True, timeout=20)
-        for k, v in res.cookies.items():
-            if k.startswith('download_warning'):
-                res = session.get(url, params={'id': file_id, 'confirm': v}, stream=True, timeout=20)
-                break
-        if b"<html" in res.content[:80].lower():
-            return None
-        return res.content
+        res = requests.get(url, timeout=5)
+        if res.status_code == 200 and b"<html" not in res.content[:80].lower():
+            return res.content
     except Exception:
-        return None
+        pass
+    return None
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)
 def build_telemetry_lake():
-    """Builds multi-year sabermetric lake automatically across 2026 and 2027+."""
     frames = []
     
     for year, folder_id in SEASONS.items():
-        csv_files = get_folder_csv_list(folder_id)
-        for file_id, file_name in csv_files:
+        files = get_folder_csv_list(folder_id)
+        for file_id, file_name in files:
             raw_bytes = download_csv(file_id)
             if not raw_bytes:
                 continue
@@ -61,7 +53,6 @@ def build_telemetry_lake():
                 if df.empty or 'TaggedPitchType' not in df.columns:
                     continue
                 
-                # Tag season year from folder structure
                 df['Season_Year'] = int(year)
                 df['Game_Source'] = file_name
                 
@@ -83,11 +74,14 @@ def build_telemetry_lake():
 st.title("⚡ Marshalls League Data Engine")
 st.markdown("##### **Created by Jordan Jones** | *Next-Gen Ball Flight Kinematics & Player Development System*")
 
-with st.spinner("Connecting to Google Drive and synchronizing season telemetry..."):
-    data = build_telemetry_lake()
+# Fast Data Load
+data = build_telemetry_lake()
 
 if data.empty:
-    st.error("No telemetry data could be loaded. Please ensure folder link sharing is set to 'Anyone with the link can view'.")
+    st.info("⚡ Telemetry is synchronizing in the background or awaiting Drive access. Click 'Refresh Lake' below to retry.")
+    if st.button("🔄 Refresh Lake"):
+        st.cache_data.clear()
+        st.rerun()
     st.stop()
 
 # ----------------- SIDEBAR CONTROLS -----------------
@@ -99,10 +93,12 @@ selected_years = st.sidebar.multiselect("Season Filter", options=available_years
 df_filtered = data[data['Season_Year'].isin(selected_years)]
 
 # Pitcher Filter
-pitchers = sorted([p for p in df_filtered['Pitcher'].dropna().unique() if str(p).strip()])
-selected_pitcher = st.sidebar.selectbox("Pitcher Profile", options=["All Pitchers"] + pitchers)
-if selected_pitcher != "All Pitchers":
-    df_filtered = df_filtered[df_filtered['Pitcher'] == selected_pitcher]
+if 'Pitcher' in df_filtered.columns:
+    pitchers = sorted([p for p in df_filtered['Pitcher'].dropna().unique() if str(p).strip()])
+    if pitchers:
+        selected_pitcher = st.sidebar.selectbox("Pitcher Profile", options=["All Pitchers"] + pitchers)
+        if selected_pitcher != "All Pitchers":
+            df_filtered = df_filtered[df_filtered['Pitcher'] == selected_pitcher]
 
 # Arsenal Filter
 pitch_types = sorted([pt for pt in df_filtered['TaggedPitchType'].dropna().unique() if str(pt).strip()])
@@ -114,7 +110,7 @@ k1, k2, k3, k4, k5 = st.columns(5)
 k1.metric("Tracked Pitches", f"{len(df_filtered):,}")
 
 fb_df = df_filtered[df_filtered['TaggedPitchType'] == 'Fastball']
-avg_velo = fb_df['RelSpeed'].mean() if not fb_df.empty else df_filtered['RelSpeed'].mean()
+avg_velo = fb_data['RelSpeed'].mean() if not fb_df.empty else df_filtered['RelSpeed'].mean()
 k2.metric("Peak FB Velo", f"{fb_df['RelSpeed'].max():.1f} mph" if not fb_df.empty else "N/A")
 k3.metric("Avg FB Velo", f"{avg_velo:.1f} mph" if pd.notna(avg_velo) else "N/A")
 
@@ -168,7 +164,7 @@ with tab_zone:
             x="PlateLocSide",
             y="PlateLocHeight",
             color="TaggedPitchType",
-            hover_data=["RelSpeed", "VertApprAngle"],
+            hover_data=["RelSpeed"],
             title="Strike Zone Heat & Location Matrix (Catcher View)",
             labels={"PlateLocSide": "Horizontal Location (ft)", "PlateLocHeight": "Vertical Location (ft)"},
             template="plotly_dark"
@@ -219,4 +215,4 @@ with tab_yoy:
         )
         st.plotly_chart(fig_yoy, use_container_width=True)
     else:
-        st.success("Currently displaying 2026 Inaugural Season data. When you drag 2027 files into the 2027 folder next June, side-by-side progression charts will populate automatically.")
+        st.success("Currently displaying 2026 Inaugural Season data. When 2027 files are placed into the 2027 folder next June, side-by-side progression charts will populate automatically.")
