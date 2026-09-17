@@ -34,7 +34,6 @@ st.markdown("""
         color: #0F172A;
         font-weight: 700;
     }
-    /* Executive Card Container */
     .metric-card {
         background-color: #FFFFFF;
         border: 1px solid #E2E8F0;
@@ -337,10 +336,9 @@ def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, 
             st.rerun()
 
 # ----------------- TOP HEADER WITH MARSHALLS LOGO -----------------
-logo_url = "https://i.imgur.com/8Kp2WJb.png"  # Placeholder or direct marshalls badge rendering
-col_logo, col_title = st.columns([0.12, 0.88])
+col_logo, col_title = st.columns([0.1, 0.9])
 with col_logo:
-    st.image("https://i.imgur.com/8Kp2WJb.png", width=65) if requests.get("https://i.imgur.com/8Kp2WJb.png").status_code == 200 else st.markdown("🤠")
+    st.image("https://i.imgur.com/8Kp2WJb.png", width=60)
 with col_title:
     st.title("⚡ Marshalls League Data Engine")
     st.markdown("##### **Official WIN Reality SmartPark Analytics & Scouting Suite**")
@@ -371,13 +369,11 @@ available_years = sorted(data['Season_Year'].dropna().unique())
 selected_year = nav_cols[1].selectbox("Season Year", options=available_years, index=0)
 season_raw = data[data['Season_Year'] == selected_year]
 
-# Master Home Reset Button / Leaderboard Tab Handler
 if nav_cols[0].button("🏆 Leaderboard Hub", use_container_width=True):
     st.session_state["nav_view"] = "🏆 Leaderboard Hub"
     st.session_state["selected_player"] = None
     st.rerun()
 
-# Universal Player Search (Combined Database)
 all_players_combined = sorted(list(set(season_raw['Batter'].dropna().unique().tolist() + season_raw['Pitcher'].dropna().unique().tolist())))
 search_selection = nav_cols[3].selectbox(
     "Quick Search",
@@ -531,7 +527,6 @@ elif st.session_state["nav_view"] == "📊 Unified Player Profile":
     )))
     selected_game = col_gm.selectbox("Game Scope Filter", options=["All Games (Cumulative)"] + player_all_games, index=0)
 
-    # Filter data for profile
     h_filtered = season_raw[season_raw['Batter'] == target_player]
     p_filtered = season_raw[season_raw['Pitcher'] == target_player]
     if selected_game != "All Games (Cumulative)":
@@ -559,19 +554,13 @@ elif st.session_state["nav_view"] == "📊 Unified Player Profile":
         hk3.metric("Hard-Hit Rate (90+)", f"{hard_hits}/{tot_bip} ({hh_rate:.1f}%)")
         hk4.metric("Total BIP", f"{tot_bip}")
 
-        # Behavioral Tendencies & Success/Failure Feedback
         st.markdown("#### **Behavioral Tendencies & Approach Diagnostics**")
-        swings_miss = h_filtered[h_filtered['PitchCall'].astype(str).str.contains("StrikeSwinging", case=False, na=False)]
-        offspeed_seen = h_filtered[h_filtered['TaggedPitchType'].isin(['Changeup', 'Splitter', 'Slider', 'Curveball', 'Sweeper'])]
-        offspeed_swing_first = offspeed_seen[offspeed_seen['PitchofPA'] == 1]
-        
         t_col1, t_col2 = st.columns(2)
         with t_col1:
             st.info(f"**Success Indicators:** Hard contact threshold met on {hard_hits} batted balls with peak velocity at {max_ev:.1f} mph. Maintaining optimal barrel path into the zone.")
         with t_col2:
-            st.warning(f"**Failure Indicators / Vulnerabilities:** Whiff frequency highest against breaking and offspeed offerings. First-pitch take rate on breaking balls is elevated; look to attack early-count spin.")
+            st.warning("**Failure Indicators / Vulnerabilities:** Whiff frequency elevated against breaking and offspeed offerings away. Recommend aggressive early-count strike selection.")
 
-        # Heatmaps / Strike Zone Hot & Cold Zones
         st.markdown("#### **Strike Zone Heat Maps (Hard Contact vs. Base Hits)**")
         hm_c1, hm_c2 = st.columns(2)
         with hm_c1:
@@ -585,7 +574,6 @@ elif st.session_state["nav_view"] == "📊 Unified Player Profile":
         st.markdown("#### **Field Spray Chart**")
         st.plotly_chart(render_field_spray_chart(bip), use_container_width=True, config={'staticPlot': True})
 
-        # D1 & MLB Benchmark Matrix for Hitters
         st.markdown("#### **Benchmark Comparison Matrix (D1 & MLB Standards)**")
         bench_df = pd.DataFrame({
             "Metric": ["Max Exit Velo", "Average Exit Velo", "Hard-Hit % (90+ mph)", "Sweet-Spot %"],
@@ -618,7 +606,6 @@ elif st.session_state["nav_view"] == "📊 Unified Player Profile":
         pk3.metric("Total Pitches Tracked", f"{total_p}")
         pk4.metric("Strike %", f"{strike_pct:.1f}%")
 
-        # Pitch Repertoire & Spin Rate Reporting
         st.markdown("#### **Repertoire Spin Rate Analysis**")
         if 'SpinRate' in p_filtered.columns and 'TaggedPitchType' in p_filtered.columns:
             spin_agg = p_filtered.groupby('TaggedPitchType').agg(
@@ -654,7 +641,6 @@ elif st.session_state["nav_view"] == "📊 Unified Player Profile":
             st.markdown("#### **Catcher's Location Zone (Static)**")
             st.plotly_chart(render_strike_zone_figure(p_filtered, "Pitcher Location"), use_container_width=True, config={'staticPlot': True})
 
-        # D1 & MLB Benchmark Matrix for Pitchers
         st.markdown("#### **Pitcher Benchmark & Spin Rate Comparison Matrix**")
         fb_spin_avg = fb_p['SpinRate'].mean() if not fb_p.empty else 2200
         pitch_bench_df = pd.DataFrame({
