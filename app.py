@@ -23,9 +23,9 @@ st.markdown("""
         display: none !important;
     }
     .block-container {
-        padding-left: 1.2rem !important;
-        padding-right: 1.2rem !important;
-        padding-top: 1.5rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        padding-top: 1rem !important;
         max-width: 100% !important;
         background-color: #F8FAFC;
     }
@@ -335,13 +335,16 @@ def render_clickable_leaderboard(df_ranked, name_col, metric_label, metric_col, 
             st.session_state["nav_view"] = target_view
             st.rerun()
 
-# ----------------- TOP HEADER WITH MARSHALLS LOGO -----------------
-col_logo, col_title = st.columns([0.1, 0.9])
-with col_logo:
-    st.image("https://i.imgur.com/8Kp2WJb.png", width=60)
-with col_title:
-    st.title("⚡ Marshalls League Data Engine")
-    st.markdown("##### **Official WIN Reality SmartPark Analytics & Scouting Suite**")
+# ----------------- PROFESSIONAL HEADER -----------------
+st.markdown("""
+    <div style='display: flex; align-items: center; gap: 14px; margin-bottom: 1rem;'>
+        <div style='font-size: 2.5rem;'>🤠⚾</div>
+        <div>
+            <h1 style='margin: 0; font-size: 1.8rem; color: #0F172A;'>Marshalls League Data Engine</h1>
+            <p style='margin: 0; color: #64748B; font-weight: 500;'>Official WIN Reality SmartPark Analytics & Scouting Suite</p>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
 
 with st.spinner("Streaming Marshalls League telemetry..."):
     data = load_marshalls_telemetry(MANIFEST_SHEET_ID)
